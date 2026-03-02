@@ -199,6 +199,7 @@ Leader                     Coder                    Debug
 └── examples/
     ├── usage-guide.md              # 使用指南：搭建和部署
     ├── ai-context-template.md      # AI-CONTEXT.md 模板
+    ├── multi-agent-rule.md         # 全局规则（~/.claude/rules/ 每次会话加载）
     ├── leader-orchestration.md     # Leader 编排技能示例
     ├── leader-agent-apply.md       # agent-apply 流程示例
     ├── leader-agent-verify.md      # agent-verify 流程示例
