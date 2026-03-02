@@ -126,7 +126,26 @@ Leader                     Coder                    Debug
 
 ## AI-CONTEXT.md
 
-放在项目根目录，所有 agent 收到任务后第一件事读这个文件，确保统一的项目背景。内容从 `CLAUDE.md` 提炼：项目简介、技术栈、目录结构、架构概要、约定、注意事项。
+每个项目根目录应有 `AI-CONTEXT.md`，是所有 agent 的共享项目背景。
+
+| 字段 | 内容 |
+|------|------|
+| 项目简介 | 一两句话说明项目是什么、做什么 |
+| 技术栈 | 语言、框架、关键依赖 |
+| 目录结构 | 核心目录说明 |
+| 架构概要 | 模块关系 |
+| 约定 | 命名、代码风格、测试方式 |
+| 注意事项 | 踩过的坑、不能动的东西、特殊限制 |
+
+**生成方式**：
+
+| 情况 | Leader 行为 |
+|------|------------|
+| 项目有 AI-CONTEXT.md | 跳过，直接开始 |
+| 没有 AI-CONTEXT.md，有 CLAUDE.md | 从 CLAUDE.md 自动提炼生成 |
+| 两者都没有 | 提醒用户手动创建 |
+
+**为什么需要**：所有 agent 读同一份背景信息，减少因信息缺失产生的幻觉。与 CLAUDE.md 分离——CLAUDE.md 是 Claude Code 专属配置，AI-CONTEXT.md 是跨平台共享的。
 
 模板见 [examples/ai-context-template.md](examples/ai-context-template.md)。
 
