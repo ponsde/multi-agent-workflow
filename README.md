@@ -4,12 +4,14 @@
 
 ## 角色分工
 
-| 角色 | 模型 | 平台 | 职责 | 不做什么 |
-|------|------|------|------|---------|
-| **Leader** | Claude Opus 4.6 | Claude Code | 架构、编排、验收、可动手修正、通信中心 | 从零写大段基础功能 |
-| **Coder** | GPT-5.3 Codex | OpenClaw | 读需求，自主实现代码+测试，交付 | 架构决策、跨模块判断 |
-| **Debug** | GPT-5.3 Codex | OpenClaw | 审查代码、定位修复 bug、参与讨论 | 从零写功能、运行测试 |
-| **Tester** | GPT-5.3 Codex | OpenClaw | 最终运行验证 | 写功能代码、直接修 bug |
+| 角色 | 模型 | 平台 | 实例数 | 职责 | 不做什么 |
+|------|------|------|--------|------|---------|
+| **Leader** | Claude Opus 4.6 | Claude Code | 1 | 架构、编排、验收、可动手修正、通信中心 | 从零写大段基础功能 |
+| **Coder** | GPT-5.3 Codex | OpenClaw | 1-N | 读需求，自主实现代码+测试，交付 | 架构决策、跨模块判断 |
+| **Debug** | GPT-5.3 Codex | OpenClaw | 1-N | 审查代码、定位修复 bug、参与讨论 | 从零写功能、运行测试 |
+| **Tester** | GPT-5.3 Codex | OpenClaw | 1 | 最终运行验证 | 写功能代码、直接修 bug |
+
+同一角色可注册多个实例（coder-1/2/3, debug-1/2/3），Leader 从 Agent Registry 动态读取。
 
 - **Leader 做甩手掌柜**：只给项目路径和任务名称，不给实现方案
 - **Leader 是通信中心**：所有 agent 间通信经 Leader 中转，Coder 和 Debug 不直接对话
@@ -23,36 +25,46 @@
 
 ### 阶段一：agent-apply（Coder 实现 + Debug 审查）
 
+Leader 根据可用 Coder 数量和 tasks 功能组数量动态选择单路或并行模式。
+
+**单路模式**（并行度 = 1）：
+
 ```
-Leader 规划任务（proposal → design → specs → tasks）
-    │
-    ▼
+前置检查：AI-CONTEXT.md → 分派 Coder → 中转 Debug → 完成
+```
+
+**并行模式**（并行度 > 1）：
+
+```
 前置检查：AI-CONTEXT.md
-┌──────────────────────────┐
-│ 存在？ ─── 是 ──→ 跳过    │
-│    │                     │
-│   否                     │
-│    │                     │
-│ 有 CLAUDE.md？           │
-│  ├─ 是 → 从中生成        │
-│  └─ 否 → 提醒用户        │
-└──────────────────────────┘
     │
     ▼
-异步分派 Coder（甩手掌柜：只给路径+名称）
+残留 worktree 检测 → 功能块拆分 → 公共文件标记为 Leader 后处理
     │
     ▼
-Coder 完成 → Leader 中转给 Debug（异步）
+创建 git worktree（每个功能组一个隔离目录+分支）
     │
-    ├─ Debug: 无问题 ──────→ 汇报完成
+    ▼
+并行分派 N 个 Coder（各自在独立 worktree 中实现）
+    │                          ← 全部完成后才进入下一步
+    ▼
+Debug 资源池分配（按需分配 worktree 给可用 Debug）
     │
-    └─ Debug: 修复了问题 → Leader 审查
-         │
-         ├─ 满意 ──────→ 汇报完成
-         │
-         └─ 不满意 → Leader↔Debug 讨论（最多 3 轮）
-              └─ 第 3 轮还不行 → 上报用户
+    ├─ Debug 数 >= worktree 数 → 全部并行审查
+    │
+    └─ Debug 数 < worktree 数 → 先到先得，完成一个接下一个
+    │                          ← 各 worktree 独立 Leader↔Debug 讨论
+    ▼
+Leader 逐个 merge 分支 → 解决冲突 → 补充公共文件 → 清理 worktree
+    │
+    ▼
+汇报完成
 ```
+
+**并行度计算**（禁止硬编码）：
+- `coder_parallelism = min(coder_count, task_groups)`
+- `debug_parallelism = min(debug_count, worktree_count)`
+- 并行度 = 1 时自动降级为单路模式
 
 ### 阶段二：agent-verify（Leader 验收 + 路由）
 
@@ -77,22 +89,42 @@ Leader 亲自验收（读所有变更文件，逐项对照 specs）
 
 所有外部 agent 调用以 `run_in_background=true` 异步执行，Leader 不阻塞等待。
 
+**单路模式**：
 ```
-Leader                     Coder                    Debug
-  │                          │                        │
-  ├── 异步分派 ─────────────→│                        │
-  │                          │                        │
-  │   继续做其他事...          │ 执行中...               │
-  │                          │                        │
-  │←── 系统通知完成 ─────────┤                        │
-  │                          │                        │
-  ├── 异步中转 ─────────────────────────────────────→│
-  │                          │                        │
-  │   继续做其他事...          │                        │ 审查中...
-  │                          │                        │
-  │←── 系统通知完成 ─────────────────────────────────┤
-  ▼
+Leader ──异步──→ Coder ──完成──→ Leader ──异步──→ Debug ──完成──→ Leader
 ```
+
+**并行模式**：
+```
+Leader ──异步──→ Coder-1 ─┐
+       ──异步──→ Coder-2 ─┤ 全部完成
+       ──异步──→ Coder-3 ─┘
+                           │
+Leader ──异步──→ Debug-1(wt-1) ─┐
+       ──异步──→ Debug-2(wt-2) ─┤ 全部完成（不够则轮转）
+       等 Debug 空闲 → Debug-1(wt-3) ─┘
+                           │
+Leader: merge → 公共文件 → 清理 → 汇报
+```
+
+---
+
+## Git Worktree 隔离
+
+并行模式通过 git worktree 为每个 Coder 创建隔离工作环境：
+
+| 项目 | 规则 |
+|------|------|
+| **路径** | `<project>/.worktrees/<change-name>-<N>` |
+| **分支** | `parallel/<change-name>-<N>` |
+| **创建** | Leader 在分派 Coder 前创建 |
+| **合并** | 所有 Coder+Debug 完成后，Leader 逐个 `git merge` |
+| **冲突** | Leader 读取冲突文件，理解两边意图，解决后 commit |
+| **公共文件** | 路由注册、配置、index 导出等 → 不分给 Coder，Leader 合并后补 |
+| **清理** | `git worktree remove` + `git branch -d` |
+| **残留检测** | agent-apply 开始前检查 `.worktrees/` 是否有上次残留 |
+
+Coder 无需知道 worktree 的存在 — Leader 在分派消息中将项目路径替换为 worktree 路径。
 
 ---
 
