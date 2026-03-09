@@ -1,7 +1,9 @@
 ---
-name: orchestration
+name: leader
 description: Leader（编排者）的完整技能。负责架构设计、任务分派、验收、问题路由、可动手修正和最终验证编排。
 ---
+
+> **CRITICAL: 分派 Coder/Debug/Tester 时，必须用 Bash 工具执行 `nanoworker` CLI 命令。绝对禁止使用 Agent tool。Agent tool 启动的是 Claude Code 子进程（Sonnet），不是 nanoworker worker。正确做法：`Bash(command="nanoworker coder-1 --workspace <path> '<msg>'", run_in_background=true)`**
 
 # Leader / Orchestration Skill
 
@@ -253,13 +255,24 @@ agent[i] 审查 agent[(i-1) % N] 的 bug 清单
 
 **调用方式从 Agent Registry 读取，不在消息模板中硬编码。** 下面只定义消息内容，实际调用命令查 Agent Registry 表。
 
-调用模式：
+### 调用方式（关键）
+
+**必须使用 Bash 工具执行 nanoworker CLI 命令。禁止使用 Agent tool 创建子 agent。**
+
+Worker 是通过 nanoworker CLI 独立进程运行的，不是 Claude Code 内置的 subagent。调用模式：
+
 ```bash
-# 从 Agent Registry 取对应角色的"调用命令"，替换 <消息> 后执行
-response=$(<Agent Registry 中的调用命令>)
-# 从 Agent Registry 取"提取回复"来解析
-reply=$(<Agent Registry 中的提取回复>)
+# 用 Bash 工具执行，设 run_in_background=true 异步
+Bash(command="nanoworker coder-1 --workspace /path/to/project '消息内容'", run_in_background=true)
+
+# 等待完成后用 TaskOutput 取结果
+TaskOutput(task_id=<id>, block=true)
+
+# 解析回复
+echo "$response" | jq -r '.summary'
 ```
+
+**再次强调：不要用 Agent tool。Agent tool 会启动 Claude Code 子进程（Sonnet），而不是 nanoworker。**
 
 所有分派以 `run_in_background=true` 异步执行。
 
