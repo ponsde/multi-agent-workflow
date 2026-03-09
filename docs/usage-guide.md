@@ -10,16 +10,25 @@
 
 ## 第一步：准备角色技能文件
 
-每个角色需要一份 SKILL.md，定义其职责、工作流、汇报格式。本仓库的 examples 目录提供了完整示例：
+每个角色需要一份 SKILL.md，定义其职责、工作流、汇报格式。本仓库的 `skills/` 目录按角色分类提供了完整示例：
 
-| 文件 | 角色 | 说明 |
+**Leader 技能**（`skills/leader/`）：
+
+| 文件 | 说明 |
+|------|------|
+| `orchestration.md` | 核心编排：Agent Registry、消息模板、核心规则 |
+| `agent-apply.md` | agent-apply 流程：Coder 实现 + Debug 审查 |
+| `agent-duel.md` | agent-duel 流程：对抗赛审查（环形互审 + Leader 裁决） |
+| `agent-verify.md` | agent-verify 流程：验收 + 路由 |
+
+**Worker 技能**（`skills/<role>/SKILL.md`）：
+
+| 目录 | 角色 | 说明 |
 |------|------|------|
-| `leader-orchestration.md` | Leader | 编排技能：Agent Registry、消息模板、核心规则 |
-| `leader-agent-apply.md` | Leader | agent-apply 流程：Coder 实现 + Debug 审查 |
-| `leader-agent-verify.md` | Leader | agent-verify 流程：验收 + 路由 |
-| `coder-skill.md` | Coder | 接收任务、自主实现、汇报 |
-| `debug-skill.md` | Debug | 3 层审查框架、3 种工作场景 |
-| `tester-skill.md` | Tester | 4 层测试框架、bug 报告格式 |
+| `skills/coder/` | Coder | 接收任务、自主实现、汇报 |
+| `skills/debug/` | Debug | 3 层审查框架、3 种工作场景 |
+| `skills/debug-duel/` | Debug-Duel | 对抗赛模式：找 bug + 审对手 |
+| `skills/tester/` | Tester | 4 层测试框架、bug 报告格式 |
 
 根据实际需求修改这些文件，然后部署。
 
@@ -43,16 +52,20 @@ Claude Code 通过 `~/.claude/skills/` 目录加载技能：
 
 ```bash
 # 编排技能（核心，包含 Agent Registry 和消息模板）
-mkdir -p ~/.claude/skills/orchestration
-cp leader-orchestration.md ~/.claude/skills/orchestration/SKILL.md
+mkdir -p ~/.claude/skills/leader
+cp skills/leader/orchestration.md ~/.claude/skills/leader/SKILL.md
 
 # agent-apply 流程
 mkdir -p ~/.claude/skills/openspec-agent-apply
-cp leader-agent-apply.md ~/.claude/skills/openspec-agent-apply/SKILL.md
+cp skills/leader/agent-apply.md ~/.claude/skills/openspec-agent-apply/SKILL.md
+
+# agent-duel 流程（对抗赛审查）
+mkdir -p ~/.claude/skills/openspec-agent-duel
+cp skills/leader/agent-duel.md ~/.claude/skills/openspec-agent-duel/SKILL.md
 
 # agent-verify 流程
 mkdir -p ~/.claude/skills/openspec-agent-verify
-cp leader-agent-verify.md ~/.claude/skills/openspec-agent-verify/SKILL.md
+cp skills/leader/agent-verify.md ~/.claude/skills/openspec-agent-verify/SKILL.md
 ```
 
 可选：注册为 Claude Code 的 slash command，方便触发：
@@ -64,6 +77,15 @@ mkdir -p ~/.claude/commands/opsx
 cat > ~/.claude/commands/opsx/agent-apply.md << 'EOF'
 ---
 description: 多 agent 委派模式实现变更（Coder 实现 + Debug 审查）
+---
+
+$ARGUMENTS
+EOF
+
+# /opsx:agent-duel 命令
+cat > ~/.claude/commands/opsx/agent-duel.md << 'EOF'
+---
+description: Debug 对抗赛模式（N 个 Debug agent 环形互审 + Leader 裁决）
 ---
 
 $ARGUMENTS
@@ -85,11 +107,12 @@ nanoworker 从 skills 目录加载角色 SKILL.md：
 
 ```bash
 # 在 nanoworker 项目目录下
-mkdir -p skills/coder skills/debug-engineer skills/testing-engineer
+mkdir -p skills/coder skills/debug-engineer skills/debug-duel skills/testing-engineer
 
-cp coder-skill.md skills/coder/SKILL.md
-cp debug-skill.md skills/debug-engineer/SKILL.md
-cp tester-skill.md skills/testing-engineer/SKILL.md
+cp skills/coder/SKILL.md skills/coder/SKILL.md
+cp skills/debug/SKILL.md skills/debug-engineer/SKILL.md
+cp skills/debug-duel/SKILL.md skills/debug-duel/SKILL.md
+cp skills/tester/SKILL.md skills/testing-engineer/SKILL.md
 ```
 
 ## 第五步：部署全局规则
@@ -98,7 +121,7 @@ Claude Code 的 skills 只在触发时加载，rules 每次会话都加载。把
 
 ```bash
 mkdir -p ~/.claude/rules/common
-cp multi-agent-rule.md ~/.claude/rules/common/multi-agent.md
+cp docs/multi-agent-rule.md ~/.claude/rules/common/multi-agent.md
 ```
 
 > 详见 [multi-agent-rule.md](multi-agent-rule.md)。
@@ -118,6 +141,7 @@ nanoworker --help
 # 验证各角色能响应
 nanoworker coder-1 --workspace /tmp "回答：你是什么角色？"
 nanoworker debug-1 --workspace /tmp "回答：你是什么角色？"
+nanoworker duel-1 --workspace /tmp "回答：你是什么角色？"
 nanoworker tester --workspace /tmp "回答：你是什么角色？"
 ```
 
@@ -129,11 +153,18 @@ nanoworker tester --workspace /tmp "回答：你是什么角色？"
 # 触发 agent-apply（Coder 实现 + Debug 审查）
 /opsx:agent-apply <change-name>
 
+# 或者：触发 agent-duel（Coder 实现 + 对抗赛审查）
+/opsx:agent-duel <change-name>
+
 # Coder+Debug 完成后，触发 agent-verify（Leader 验收 + 路由）
 /opsx:agent-verify <change-name>
 ```
 
-Leader 会按照编排技能中的流程自动执行：分派 Coder → 中转 Debug → 处理讨论 → 验收 → 路由。
+**agent-apply vs agent-duel**：
+- `agent-apply`：常规流程，单个 Debug 审查+修复，适合日常变更
+- `agent-duel`：对抗赛流程，多个 Debug-Duel agent 环形互审 + Leader 裁决，适合重要变更
+
+Leader 会按照编排技能中的流程自动执行：分派 Coder → Debug 审查/对抗赛 → 处理讨论 → 验收 → 路由。
 
 ---
 
@@ -141,7 +172,7 @@ Leader 会按照编排技能中的流程自动执行：分派 Coder → 中转 D
 
 ### 调整 Agent Registry
 
-编辑 `leader-orchestration.md` 中的 Agent Registry 表，修改角色名称、调用命令等。
+编辑 `skills/leader/orchestration.md` 中的 Agent Registry 表，修改角色名称、调用命令等。
 
 ### 调整 Worker 数量
 
@@ -149,11 +180,11 @@ Leader 会按照编排技能中的流程自动执行：分派 Coder → 中转 D
 
 ### 调整讨论轮次
 
-默认 3 轮。修改 `leader-orchestration.md` 和 `leader-agent-apply.md` 中的"3 轮"相关描述。
+默认 3 轮。修改 `skills/leader/orchestration.md` 和 `skills/leader/agent-apply.md` 中的"3 轮"相关描述。
 
 ### 添加新角色
 
-1. 写一份新的 SKILL.md（参考现有角色）
+1. 在 `skills/<role>/` 下写一份 SKILL.md（参考现有角色）
 2. 在 nanoworker config 中注册 worker
 3. 在 Leader 的 Agent Registry 中注册
 4. 在 Leader 的消息模板中添加分派模板
