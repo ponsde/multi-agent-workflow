@@ -43,6 +43,8 @@ openspec-cn instructions apply --change "<name>" --json
 
 阅读 contextFiles 中列出的文件（proposal, design, specs, tasks）。
 
+> **重要：tasks 未完成是正常状态。** 本流程的目的就是先分派 Coder 实现（步骤 5），然后再 Duel Debug 审查。不要因为 tasks 未打勾就中断流程或询问用户。直接继续步骤 4。
+
 ### 4. 判断 Coder 并行度
 
 1. 从 Agent Registry 统计 Coder 角色 agent 数量 → coder_count
