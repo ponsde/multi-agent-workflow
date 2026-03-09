@@ -3,6 +3,8 @@ name: openspec-agent-verify
 description: Leader 验收 Coder+Debug 交付，按问题类型路由。缺功能走 Coder+Debug，有 bug 走 Debug，通过走 Tester。
 ---
 
+> **CRITICAL: 本技能中所有 Coder/Debug/Tester 调用必须用 Bash 工具执行 `nanoworker` CLI 命令。绝对禁止使用 Agent tool 创建子 agent。Agent tool 会启动 Claude Code 子进程（Sonnet），而不是 nanoworker worker。正确做法：`Bash(command="nanoworker debug-1 --workspace <path> '<msg>'", run_in_background=true)`**
+
 # Agent Verify（Leader 验收 + 路由）
 
 在 `/opsx:agent-apply`（Coder 实现 + Debug 审查）之后使用。Leader 亲自验收代码，然后按问题类型路由。
@@ -36,8 +38,8 @@ Coder 漏了需求或实现不完整。
 
 → **走 Coder+Debug 流程**（同 agent-apply）：
 
-1. 派 Coder 补充（参见 orchestration SKILL.md "分派 Coder" 模板），以 `run_in_background=true` 异步发送，消息说明缺了什么
-2. Coder 完成后，Leader 中转给 Debug 审查（参见 "分派 Debug — 场景 A" 模板），以 `run_in_background=true` 异步发送
+1. **用 Bash 工具执行 nanoworker CLI**（禁止用 Agent tool）派 Coder 补充（从 Agent Registry 取命令），以 `run_in_background=true` 异步发送，消息说明缺了什么
+2. Coder 完成后，Leader **用 Bash 工具执行 nanoworker CLI** 中转给 Debug 审查（从 Agent Registry 取命令），以 `run_in_background=true` 异步发送
 3. 如有问题，进入 Leader↔Debug 讨论（参见 agent-apply 步骤 8a，最多 3 轮）
 4. 完成后 → 回到步骤 2 重新验收
 
@@ -45,7 +47,7 @@ Coder 漏了需求或实现不完整。
 
 代码有逻辑错误、边界问题等。
 
-→ **派 Debug 修复**（参见 orchestration SKILL.md "分派 Debug — 场景 B" 模板），以 `run_in_background=true` 异步发送，消息包含具体问题列表。
+→ **用 Bash 工具执行 nanoworker CLI**（禁止用 Agent tool）派 Debug 修复（从 Agent Registry 取命令），以 `run_in_background=true` 异步发送，消息包含具体问题列表。
 
 Debug 完成后 Leader 审查：
 - **Leader 满意** → 回到步骤 2 重新验收
@@ -55,7 +57,7 @@ Debug 完成后 Leader 审查：
 
 所有检查项通过，无功能缺失，无 bug。
 
-→ **派 Tester 运行验证**（参见 orchestration SKILL.md "分派 Tester" 模板），以 `run_in_background=true` 异步发送。
+→ **用 Bash 工具执行 nanoworker CLI**（禁止用 Agent tool）派 Tester 运行验证（从 Agent Registry 取命令），以 `run_in_background=true` 异步发送。
 
 ### 4. 处理 Tester 结果
 

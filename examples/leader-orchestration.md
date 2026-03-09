@@ -22,7 +22,10 @@ Leader 从此表动态读取可用 agent。同角色可注册多个实例。
 | 5 | debug-1 | Debug | `nanoworker debug-1 --workspace <项目路径> "<消息>"` |
 | 6 | debug-2 | Debug | `nanoworker debug-2 --workspace <项目路径> "<消息>"` |
 | 7 | debug-3 | Debug | `nanoworker debug-3 --workspace <项目路径> "<消息>"` |
-| 8 | tester | Tester | `nanoworker tester --workspace <项目路径> "<消息>"` |
+| 8 | duel-1 | Debug-Duel | `nanoworker duel-1 --workspace <项目路径> "<消息>"` |
+| 9 | duel-2 | Debug-Duel | `nanoworker duel-2 --workspace <项目路径> "<消息>"` |
+| 10 | duel-3 | Debug-Duel | `nanoworker duel-3 --workspace <项目路径> "<消息>"` |
+| 11 | tester | Tester | `nanoworker tester --workspace <项目路径> "<消息>"` |
 
 **提取回复**：`echo "$response" | jq -r '.summary'`
 
@@ -171,6 +174,81 @@ Debug 和 Coder/worktree 数量解耦，按资源池模式分配：
 
 ---
 
+## 对抗赛编排
+
+### 对抗赛并行度计算
+
+对抗赛需要至少 2 个 Debug-Duel agent 才能启动。Leader 从 Agent Registry 动态计算：
+
+1. 按 Role 列筛选 Debug-Duel 角色 agent，得到 `duel_count`
+2. 如果 `duel_count < 2`：**禁止启动对抗赛**，提示用户"Debug-Duel agent 不足（当前 N 个），对抗赛需要至少 2 个。建议使用原有 Debug 流程（agent-apply）。"
+3. 如果 `duel_count >= 2`：所有可用 Debug-Duel agent 参与对抗赛，`N = duel_count`
+
+### 环形拓扑生成
+
+N 个 Debug-Duel agent 参与对抗赛时，Round 2 的互审按环形拓扑分配：
+
+```
+agent[i] 审查 agent[(i-1) % N] 的 bug 清单
+```
+
+具体映射（以 N=3 为例）：
+- agent[0] 审 agent[2] 的清单
+- agent[1] 审 agent[0] 的清单
+- agent[2] 审 agent[1] 的清单
+
+适配任意 N>=2。每人审一份，每份被审一次。
+
+### 对抗赛裁决
+
+所有 Round 1 清单和 Round 2 对抗报告收集完毕后，Leader 作为裁判做最终裁决。
+
+#### 裁决分类规则
+
+对每个被报告的 bug，按以下规则分类：
+
+| 情况 | 裁决 |
+|------|------|
+| 多人找到 + 未被推翻 | **确认**为 bug |
+| 被推翻 + 推翻理由充分 | **排除**（非 bug） |
+| 推翻理由不充分 / 双方各执一词 | Leader **亲自读代码**判断 |
+| 单人独有 + 未被环形对手审到 | Leader **验证**后决定 |
+
+#### 裁决产出格式
+
+裁决完成后，Leader 生成最终 bug 清单：
+
+```markdown
+## 对抗赛裁决结果
+
+### 确认的 bug
+
+| # | 文件路径 | 问题描述 | 严重程度 | 来源 | 裁决理由 |
+|---|---------|---------|---------|------|---------|
+| 1 | <path> | <description> | 致命/中影响/低影响 | duel-1, duel-2 | 多人发现且未被推翻 |
+
+### 排除的条目
+
+| # | 原始描述 | 排除理由 |
+|---|---------|---------|
+| 1 | <description> | 被 duel-2 推翻，理由充分：<reason> |
+
+### Leader 亲自判定
+
+| # | 文件路径 | 问题描述 | 判定结果 | 判定理由 |
+|---|---------|---------|---------|---------|
+| 1 | <path> | <description> | 确认/排除 | <reason> |
+```
+
+#### 裁决后修复路由
+
+确认的 bug 进入修复流程，复用现有分派机制：
+- Leader 将最终 bug 清单中的确认条目整理为问题列表
+- 按"分派 Debug — 场景 B：定点修复"模板分派给 Coder 或 Debug 修复
+- 修复完成后走正常的验收流程
+
+---
+
 ## 分派调用
 
 **调用方式从 Agent Registry 读取，不在消息模板中硬编码。** 下面只定义消息内容，实际调用命令查 Agent Registry 表。
@@ -263,6 +341,80 @@ Change：openspec/changes/<change-name>/
 为什么这样改：<原因>
 
 请审查这些修改是否合理，如果有问题直接修复。汇报你的判断和修改（如有）。
+```
+
+### 分派 Debug — 对抗赛（场景 D/E）
+
+对抗赛模式下，Debug-Duel agent 收到带竞赛背景的消息。以下是竞赛背景块模板和两种任务的分派消息模板。
+
+#### 竞赛背景块（注入每条对抗赛消息）
+
+```
+🎮 Bug 猎人竞赛
+
+你正在参加一场 Bug 猎人竞赛。规则如下：
+
+**评分规则：**
+- 发现低影响 bug：+1 分
+- 发现中影响 bug：+5 分
+- 发现致命 bug：+10 分
+
+**两种任务类型：**
+- 任务 A — 找 bug：从 spec 出发独立探索代码，尽可能多地找到真实 bug
+- 任务 B — 审对手：逐条验证对手的 bug 清单，推翻对手得该 bug 的分数，推翻错了扣 2 倍分数
+
+裁判（Leader）会告诉你本次执行哪种任务。
+```
+
+#### 场景 D：对抗赛 Round 1（找 bug）
+
+```
+请参加 Bug 猎人竞赛，执行任务 A：找 bug。
+
+<竞赛背景块>
+
+📋 本次任务：任务 A — 找 bug
+
+项目：<项目路径>
+Change：openspec/changes/<change-name>/
+Spec 路径：openspec/changes/<change-name>/specs/
+
+请先读取：
+1. AI-CONTEXT.md（项目背景）
+2. change 的 spec（了解需求）
+
+然后从 spec 出发，自行探索项目代码，找到尽可能多的真实 bug。
+不限于任何特定文件——你决定审查范围。
+
+完成后返回结构化 bug 清单（格式见你的技能说明）。
+```
+
+#### 场景 E：对抗赛 Round 2（审对手）
+
+```
+请参加 Bug 猎人竞赛，执行任务 B：审查对手清单。
+
+<竞赛背景块>
+
+📋 本次任务：任务 B — 审查对手清单
+
+项目：<项目路径>
+Change：openspec/changes/<change-name>/
+Spec 路径：openspec/changes/<change-name>/specs/
+
+**对抗评分规则：**
+- 成功推翻对手的 bug：得该 bug 的分数
+- 推翻错了（该 bug 确实存在）：扣 2 倍分数
+
+请先读取：
+1. AI-CONTEXT.md（项目背景）
+2. change 的 spec（了解需求）
+
+**对手的 bug 清单：**
+<对手 bug 清单——仅结论，不含推理过程>
+
+请逐条去代码中独立验证，标注推翻/认同及理由。
+完成后返回结构化对抗报告（格式见你的技能说明）。
 ```
 
 ### 分派 Tester（消息内容）

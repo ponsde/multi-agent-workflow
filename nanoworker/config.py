@@ -20,7 +20,7 @@ class ProviderConfig:
 @dataclass(frozen=True)
 class WorkerDef:
     role: str = "coder"
-    model: str = "openai/gpt-5.3-codex"
+    model: str = "openai/gpt-5.4"
     skills: tuple[str, ...] = ()
     max_iterations: int = 30
 
@@ -41,7 +41,7 @@ def _parse_provider(raw: dict[str, Any]) -> ProviderConfig:
 def _parse_worker(raw: dict[str, Any]) -> WorkerDef:
     return WorkerDef(
         role=raw.get("role", "coder"),
-        model=raw.get("model", "openai/gpt-5.3-codex"),
+        model=raw.get("model", "openai/gpt-5.4"),
         skills=tuple(raw.get("skills", [])),
         max_iterations=raw.get("max_iterations", 30),
     )
