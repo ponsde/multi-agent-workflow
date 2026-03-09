@@ -383,12 +383,13 @@ nanoworker/
 ```
 .
 ├── README.md
-├── skills/                         # 角色技能文件
+├── skills/                         # 技能文件
 │   ├── leader/                     # Leader（编排者）
-│   │   ├── orchestration.md        #   核心编排：Agent Registry、消息模板、规则
-│   │   ├── agent-apply.md          #   agent-apply 流程（Coder 实现 + Debug 审查）
-│   │   ├── agent-duel.md           #   agent-duel 流程（对抗赛审查）
-│   │   └── agent-verify.md         #   agent-verify 流程（验收 + 路由）
+│   │   └── orchestration.md        #   核心编排：Agent Registry、消息模板、规则
+│   ├── opsx/                       # 编排流程（slash command 技能）
+│   │   ├── agent-apply.md          #   Coder 实现 + Debug 审查
+│   │   ├── agent-duel.md           #   Coder 实现 + 对抗赛审查
+│   │   └── agent-verify.md         #   Leader 验收 + 路由
 │   ├── coder/
 │   │   └── SKILL.md                # Coder 技能
 │   ├── debug/
@@ -397,6 +398,8 @@ nanoworker/
 │   │   └── SKILL.md                # Debug-Duel 技能（对抗赛模式）
 │   └── tester/
 │       └── SKILL.md                # Tester 技能
+├── rules/                          # 全局规则（每次会话自动加载）
+│   └── multi-agent.md              #   多 agent 协作基本信息
 ├── nanoworker/                     # 轻量 Worker agent CLI 源码
 │   ├── cli.py                      #   入口
 │   ├── config.py                   #   配置加载
@@ -407,8 +410,7 @@ nanoworker/
 └── docs/                           # 文档
     ├── usage-guide.md              #   搭建和部署指南
     ├── nanoworker-setup.md         #   nanoworker 安装配置
-    ├── ai-context-template.md      #   AI-CONTEXT.md 模板
-    └── multi-agent-rule.md         #   全局规则文件示例
+    └── ai-context-template.md      #   AI-CONTEXT.md 模板
 ```
 
 ## License
