@@ -76,19 +76,21 @@ Leader 合并 Coder 修改，汇总判断 → 用户决定进入实现
         Debug 资源池分配 → 各 worktree 独立审查/讨论
             │
             ▼
-        Leader 逐个 merge → 补公共文件 → 清理 → 汇报完成
+        Leader 逐个 merge → 补公共文件 → 清理
+    │
+    ▼
+Leader 代码优化（按验收检查清单，自己动手改）
+    │
+    ▼
+汇报完成
 
 === 阶段二：agent-verify ===
 
-Leader 亲自验收（读所有变更文件，工程化验收 6 维检查）
+Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查是否全部落地）
     │
     ├─ 缺功能 → Coder 补充 → Debug 审查（同阶段一流程）→ 重新验收
     │
     ├─ 有 bug → Debug 修复 → (Leader↔Debug 讨论) → 重新验收
-    │
-    ├─ 结构/命名/维护性问题 → Leader 判断小修还是回 agent-apply
-    │
-    ├─ change 定义有问题 → 回 agent-change-review
     │
     └─ 通过 → Tester 最终验证
                 │
@@ -543,14 +545,14 @@ Leader 验收 Coder 交付时，以老练程序员的标准审查，追求工程
 - [ ] 数据不可变（优先创建新对象，不修改原对象）
 - [ ] 遵循 AI-CONTEXT.md 中的项目约定
 
-### 验收路由
+### 验收路由（agent-verify 阶段）
+
+代码质量已在 agent-apply 阶段由 Leader 优化完成，verify 阶段只检查实现完整性。
 
 | 问题类型 | 路由 |
 |---------|------|
 | 缺功能 / 实现未落地 | 回 agent-apply（Coder 补充 + Debug 审查） |
 | 明确 bug / 回归问题 | 走 Debug 修复 |
-| 结构 / 命名 / 维护性问题 | Leader 判断：小修自己改，大改回 agent-apply |
-| 规格 / 变更定义有问题 | 回 agent-change-review |
 
 ---
 

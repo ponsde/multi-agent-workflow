@@ -162,7 +162,13 @@ Change：openspec/changes/<change-name>/
 - 汇总 discussion.md 完整上下文
 - **上报主人**决策
 
-### 9. 汇报完成（单路）
+### 9. Leader 代码优化
+
+Debug 审查/讨论完成后，Leader **亲自**阅读所有变更文件的完整内容，按自身验收检查清单（详见 Leader SKILL.md）优化代码质量。
+
+Leader 在这个环节自己动手改——因为此时 Leader 的上下文最全，适合做全局优化和拆分。
+
+### 10. 汇报完成（单路）
 
 ```
 ## Agent Apply 完成
@@ -176,6 +182,8 @@ Change：openspec/changes/<change-name>/
 **Debug 审查：** <无问题 / 修复了 N 个问题>
 
 **讨论轮次：** <0 / N 轮>
+
+**Leader 优化：** <优化摘要 / 无需优化>
 
 下一步：运行 `/opsx:agent-verify` 进行 Leader 验收。
 ```
@@ -251,7 +259,13 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 3. 检查公共文件（路由注册、index 导出、配置等），缺失的由 Leader 补上
 4. 清理：`git worktree remove .worktrees/<change-name>-N` + `git branch -d parallel/<change-name>-N`
 
-### P8. 汇报完成（并行）
+### P8. Leader 代码优化
+
+合并完成后，Leader **亲自**阅读所有变更文件的完整内容，按自身验收检查清单（详见 Leader SKILL.md）优化代码质量。
+
+合并后 Leader 是唯一看到全貌的人，适合做跨模块优化、文件拆分等全局性改进。
+
+### P9. 汇报完成（并行）
 
 ```
 ## Agent Apply 完成
@@ -266,6 +280,8 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 
 **合并结果：** <无冲突 / 解决了 N 个冲突>
 **公共文件补充：** <无 / 补充了 N 个文件>
+
+**Leader 优化：** <优化摘要 / 无需优化>
 
 下一步：运行 `/opsx:agent-verify` 进行 Leader 验收。
 ```
