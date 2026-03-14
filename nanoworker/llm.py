@@ -6,25 +6,9 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-import litellm
 from litellm import acompletion
 
 from nanoworker.config import Config
-
-# Disable Responses API routing — custom proxies don't support /v1/responses.
-# Monkey-patch the bridge check to never return mode="responses".
-import litellm.main as _litellm_main
-
-_orig_responses_check = _litellm_main.responses_api_bridge_check
-
-
-def _patched_responses_check(model, custom_llm_provider, **kwargs):
-    model_info, model = _orig_responses_check(model, custom_llm_provider, **kwargs)
-    model_info.pop("mode", None)
-    return model_info, model
-
-
-_litellm_main.responses_api_bridge_check = _patched_responses_check
 
 
 @dataclass(frozen=True)
@@ -61,6 +45,16 @@ def setup_provider_env(config: Config, model: str) -> None:
                 os.environ["OPENAI_API_BASE"] = provider.api_base
 
 
+def _normalize_tool_call_id(tc_id: str) -> str:
+    """Normalize tool call ID prefix for API compatibility.
+
+    Some upstream APIs expect 'fc_' prefix instead of 'call_'.
+    """
+    if tc_id.startswith("call_"):
+        return "fc_" + tc_id[5:]
+    return tc_id
+
+
 async def chat(
     model: str,
     messages: list[dict[str, Any]],
@@ -82,7 +76,7 @@ async def chat(
     if message.tool_calls:
         tool_calls = tuple(
             ToolCall(
-                id=tc.id,
+                id=_normalize_tool_call_id(tc.id),
                 name=tc.function.name,
                 arguments=tc.function.arguments,
             )
