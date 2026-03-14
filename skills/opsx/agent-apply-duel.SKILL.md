@@ -259,7 +259,13 @@ Change：openspec/changes/<change-name>/
 请定位并修复这些问题，修复后汇报：改了哪里、为什么改。
 ```
 
-### 8. 汇报完成（单路）
+### 8. Leader 代码优化
+
+对抗赛修复完成后，Leader **亲自**阅读所有变更文件的完整内容，按自身验收检查清单（详见 Leader SKILL.md）优化代码质量。
+
+Leader 在这个环节自己动手改——因为此时 Leader 的上下文最全，适合做全局优化和拆分。
+
+### 9. 汇报完成（单路）
 
 ```
 ## Agent Apply Duel 完成
@@ -277,6 +283,8 @@ Change：openspec/changes/<change-name>/
 - 裁决结果：A 条确认，B 条排除，C 条 Leader 亲自判定
 
 **修复：** <无需修复 / 修复了 N 个 bug>
+
+**Leader 优化：** <优化摘要 / 无需优化>
 
 下一步：运行 `/opsx:agent-verify` 进行 Leader 验收。
 ```
@@ -341,7 +349,13 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 3. Leader 裁决（7c）
 4. 修复确认的 bug（7d）
 
-### P8. 汇报完成（并行）
+### P8. Leader 代码优化
+
+对抗赛修复完成后，Leader **亲自**阅读所有变更文件的完整内容，按自身验收检查清单（详见 Leader SKILL.md）优化代码质量。
+
+合并后 Leader 是唯一看到全貌的人，适合做跨模块优化、文件拆分等全局性改进。
+
+### P9. 汇报完成（并行）
 
 ```
 ## Agent Apply Duel 完成
@@ -360,6 +374,8 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 - 裁决结果：A 条确认，B 条排除
 
 **修复：** <无需修复 / 修复了 N 个 bug>
+
+**Leader 优化：** <优化摘要 / 无需优化>
 
 下一步：运行 `/opsx:agent-verify` 进行 Leader 验收。
 ```
