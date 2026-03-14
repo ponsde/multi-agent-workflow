@@ -22,13 +22,19 @@ class WorkerResult:
 
 
 def _track_file_changes(tool_calls_log: list[dict[str, Any]]) -> tuple[str, ...]:
-    """Extract file paths from write/edit tool calls."""
+    """Extract file paths from write/edit tool calls and flag exec usage."""
     paths: set[str] = set()
+    has_exec = False
     for entry in tool_calls_log:
-        if entry["name"] in ("write_file", "edit_file"):
+        name = entry["name"]
+        if name in ("write_file", "edit_file"):
             args = entry.get("arguments", {})
             if "path" in args:
                 paths.add(args["path"])
+        elif name == "exec":
+            has_exec = True
+    if has_exec:
+        paths.add("[exec commands were used - additional files may have changed]")
     return tuple(sorted(paths))
 
 
@@ -117,6 +123,14 @@ async def run_worker(
     else:
         final_content = f"Worker reached max iterations ({max_iterations})"
         logger.warning(final_content)
+
+        files_changed = _track_file_changes(tool_calls_log)
+        return WorkerResult(
+            success=False,
+            summary=final_content,
+            iterations=max_iterations,
+            files_changed=files_changed,
+        )
 
     files_changed = _track_file_changes(tool_calls_log)
 

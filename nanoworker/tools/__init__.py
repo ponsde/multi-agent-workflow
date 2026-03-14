@@ -50,7 +50,8 @@ class ToolRegistry:
 ROLE_TOOLS: dict[str, tuple[type[Tool], ...]] = {
     "coder": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
     "debug": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
-    "tester": (ReadFileTool, WriteFileTool, ListDirTool, ExecTool),
+    "debug-duel": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
+    "tester": (ReadFileTool, ListDirTool, ExecTool),
 }
 
 
