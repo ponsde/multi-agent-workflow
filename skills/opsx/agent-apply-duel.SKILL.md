@@ -1,11 +1,11 @@
 ---
-name: openspec-agent-duel
-description: 多 agent 委派模式 apply（对抗赛版）。Coder 实现 → Duel Debug 竞赛审查（环形互审 + Leader 裁决）→ 修复 → 完成。
+name: openspec-agent-apply-duel
+description: 多 agent 委派模式 apply（对抗赛版）。Coder 实现 → Duel Debug 竞赛审查（环形互审 + Leader 裁决）→ 修复 → 完成。本质是 agent-apply 的 Debug 审查替代方案。
 ---
 
 > **CRITICAL: 本技能中所有 Coder/Duel/Debug/Tester 调用必须用 Bash 工具执行 `nanoworker` CLI 命令。绝对禁止使用 Agent tool 创建子 agent。Agent tool 会启动 Claude Code 子进程（Sonnet），而不是 nanoworker worker。正确做法：`Bash(command="nanoworker duel-1 --workspace <path> '<msg>'", run_in_background=true)`**
 
-# Agent Duel（Coder 实现 + Duel Debug 对抗赛审查）
+# Agent Apply Duel（Coder 实现 + Duel Debug 对抗赛审查）
 
 Coder 实现代码，然后由多个 Duel Debug agent 通过竞赛对抗审查（Round 1 并行找 bug → Round 2 环形互审 → Leader 裁决），最后修复确认的 bug。
 
@@ -262,7 +262,7 @@ Change：openspec/changes/<change-name>/
 ### 8. 汇报完成（单路）
 
 ```
-## Agent Duel 完成
+## Agent Apply Duel 完成
 
 **变更：** <change-name>
 **模式：** 单路 + 对抗赛审查
@@ -344,7 +344,7 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 ### P8. 汇报完成（并行）
 
 ```
-## Agent Duel 完成
+## Agent Apply Duel 完成
 
 **变更：** <change-name>
 **模式：** 并行（N 路）+ 对抗赛审查

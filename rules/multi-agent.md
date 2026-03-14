@@ -9,7 +9,7 @@
 # Multi-Agent Collaboration
 
 多 agent 协作的编排流程、Agent Registry、调用方式和核心规则，
-详见编排技能：`~/.claude/skills/orchestration/SKILL.md`
+详见编排技能：`~/.claude/skills/leader/SKILL.md`
 
 ## AI-CONTEXT.md
 
