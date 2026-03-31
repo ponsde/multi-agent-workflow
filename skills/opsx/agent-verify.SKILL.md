@@ -75,7 +75,7 @@ Debug 完成后 Leader 审查：
 所有任务已完成！运行 `/opsx:archive` 归档此变更。
 ```
 
-在 tasks.md 中标记对应任务为 `[x]`。
+确认 tasks.md 中所有任务已标记为 `[x]`（apply 阶段应已标记，此处做最终核实，补漏则补标）。
 
 **Tester 发现问题**：
 

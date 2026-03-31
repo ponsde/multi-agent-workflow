@@ -46,12 +46,7 @@ def setup_provider_env(config: Config, model: str) -> None:
 
 
 def _normalize_tool_call_id(tc_id: str) -> str:
-    """Normalize tool call ID prefix for API compatibility.
-
-    Some upstream APIs expect 'fc_' prefix instead of 'call_'.
-    """
-    if tc_id.startswith("call_"):
-        return "fc_" + tc_id[5:]
+    """Return tool call IDs unchanged for OpenAI-compatible providers."""
     return tc_id
 
 
