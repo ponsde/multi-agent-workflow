@@ -18,6 +18,8 @@ description: 多 agent 协作审查 change 产出物。Leader 与 Coder 并行�
 
 ### 1. 选择变更
 
+> **变更目录在 `openspec/changes/<name>/`（不是 `.openspec`）。** 用 `openspec-cn list --json` 验证变更是否存在。
+
 如果提供了名称，使用它。否则：
 - 如果用户提到了某个变更，从对话上下文中推断
 - 如果只存在一个活动变更，自动选择

@@ -79,7 +79,10 @@ Leader 合并 Coder 修改，汇总判断 → 用户决定进入实现
         Leader 逐个 merge → 补公共文件 → 清理
     │
     ▼
-Leader 代码优化（按验收检查清单，自己动手改）
+Leader 代码优化（按 8 项审查清单逐项检查，自己动手改）
+    │
+    ▼
+标记已完成的任务（tasks.md 打 [x]）
     │
     ▼
 汇报完成
@@ -90,12 +93,12 @@ Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查
     │
     ├─ 缺功能 → Coder 补充 → Debug 审查（同阶段一流程）→ 重新验收
     │
-    ├─ 有 bug → Debug 修复 → (Leader↔Debug 讨论) → 重新验收
+    ├─ 有 bug → Debug 修复 → Leader 审查修复结果 → (Leader↔Debug 讨论) → 重新验收
     │
-    └─ 通过 → Tester 最终验证
+    └─ 通过 → Tester 最终验证 → 确认 tasks.md 全部 [x]
                 │
                 ├─ 通过 → 完成
-                └─ 失败 → Debug 修复 → 重新验收
+                └─ 失败 → Debug 修复 → Leader 审查修复结果 → 重新验收
 ```
 
 **所有外部调用异步**：Coder、Debug、Tester 都用 `run_in_background=true`。
@@ -265,7 +268,8 @@ agent[i] 审查 agent[(i-1) % N] 的 bug 清单
 确认的 bug 进入修复流程，复用现有分派机制：
 - Leader 将最终 bug 清单中的确认条目整理为问题列表
 - 按"分派 Debug — 场景 B：定点修复"模板分派给 Coder 或 Debug 修复
-- 修复完成后走正常的验收流程
+- **修复完成后 Leader 必须亲自审查修复结果**（读完整文件，逐条确认 bug 已修好且未引入新问题）
+- 审查通过后进入 Leader 代码优化 → 标记任务 → 汇报
 
 ---
 
@@ -467,8 +471,8 @@ Change：openspec/changes/<change-name>/
 
 ## discussion.md 写入规则
 
-- **单路模式**：`<change>/discussion.md`
-- **并行模式**：每个 worktree 独立文件 `<worktree>/<change>/discussion-wt-<N>.md`
+- **单路模式**：`openspec/changes/<change-name>/discussion.md`
+- **并行模式**：每个 worktree 独立文件 `<worktree-path>/openspec/changes/<change-name>/discussion-wt-<N>.md`
 
 ### Leader 发给 Debug 之前追加
 

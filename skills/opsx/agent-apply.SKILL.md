@@ -15,6 +15,8 @@ description: 多 agent 委派模式 apply。Coder 实现 → Leader 中转 → D
 
 ### 1. 选择变更
 
+> **变更目录在 `openspec/changes/<name>/`（不是 `.openspec`）。** 用 `openspec-cn list --json` 验证变更是否存在。
+
 如果提供了名称，使用它。否则：
 - 如果用户提到了某个变更，从对话上下文中推断
 - 如果只存在一个活动变更，自动选择
@@ -123,7 +125,7 @@ Coder 修改的文件：
 **每轮流程：**
 
 1. Leader 修改代码
-2. 将修改信息追加到 `<change>/discussion.md`（格式见下方写入规则）
+2. 将修改信息追加到 `openspec/changes/<change-name>/discussion.md`（格式见下方写入规则）
 3. 发给 Debug 验收，以 `run_in_background=true` 异步发送：
 
 ```bash
@@ -284,7 +286,7 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 3. 将前 debug_parallelism 个 worktree 分配给可用 Debug，以 `run_in_background=true` 同时分派
 4. 每个 Debug 收到对应 worktree 路径 + 该 Coder 修改的文件清单
 5. 如果还有剩余 worktree 待审查 → 等最先完成的 Debug，分配下一个 worktree
-6. 每个 worktree 的讨论记录在 `<worktree>/<change>/discussion-wt-<N>.md`
+6. 每个 worktree 的讨论记录在 `<worktree-path>/openspec/changes/<change-name>/discussion-wt-<N>.md`
 
 消息内容同单路模式步骤 7 的 Debug 消息模板，项目路径换为 worktree 路径。
 
@@ -345,7 +347,7 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 
 ## discussion.md 写入规则
 
-讨论文件位于 `<change>/discussion.md`，记录 Leader↔Debug 每轮上下文。
+讨论文件位于 `openspec/changes/<change-name>/discussion.md`，记录 Leader↔Debug 每轮上下文。
 
 ### Leader 发给 Debug 时追加
 

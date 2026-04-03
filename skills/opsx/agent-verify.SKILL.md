@@ -15,6 +15,8 @@ description: Leader 验收实现完整性（代码质量已在 apply 阶段优�
 
 ### 1. 选择变更
 
+> **变更目录在 `openspec/changes/<name>/`（不是 `.openspec`）。** 用 `openspec-cn list --json` 验证变更是否存在。
+
 与原版相同：从参数、上下文或列表中确定变更名称。
 
 ### 2. Leader 验收实现完整性
