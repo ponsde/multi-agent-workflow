@@ -65,15 +65,15 @@ Leader 合并 Coder 修改，汇总判断 → 用户决定进入实现
     ├─ 并行度 = 1 → 单路模式（不创建 worktree）
     │   │
     │   ▼
-    │   分派 Coder → 中转 Debug → 完成/讨论
+    │   分派 Coder（⚠️ 用 nanoworker CLI，不用 Agent tool）→ 中转 Debug → 完成/讨论
     │
     └─ 并行度 > 1 → 并行模式
         │
         ▼
-        创建 worktree → 并行分派 N 个 Coder → 等全部完成
+        创建 worktree → 并行分派 N 个 Coder（⚠️ nanoworker CLI）→ 等全部完成
             │
             ▼
-        Debug 资源池分配 → 各 worktree 独立审查/讨论
+        Debug 资源池分配（⚠️ nanoworker CLI）→ 各 worktree 独立审查/讨论
             │
             ▼
         Leader 逐个 merge → 补公共文件 → 清理
@@ -93,9 +93,9 @@ Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查
     │
     ├─ 缺功能 → Coder 补充 → Debug 审查（同阶段一流程）→ 重新验收
     │
-    ├─ 有 bug → Debug 修复 → Leader 审查修复结果 → (Leader↔Debug 讨论) → 重新验收
+    ├─ 有 bug → Debug 修复（⚠️ nanoworker CLI）→ Leader 审查修复结果 → (Leader↔Debug 讨论) → 重新验收
     │
-    └─ 通过 → Tester 最终验证 → 确认 tasks.md 全部 [x]
+    └─ 通过 → Tester 最终验证（⚠️ nanoworker CLI）→ 确认 tasks.md 全部 [x]
                 │
                 ├─ 通过 → 完成
                 └─ 失败 → Debug 修复 → Leader 审查修复结果 → 重新验收
@@ -108,6 +108,7 @@ Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查
 
 ## 核心规则
 
+0. **⚠️ 必须用 nanoworker，禁止用 Agent tool**：分派 Coder/Debug/Tester 时，必须用 `Bash(command="nanoworker <worker-id> --workspace <path> '<msg>'", run_in_background=true)`。**Agent tool 启动的是 Claude Code 子进程，不是 nanoworker worker，角色技能不会生效。**
 1. **甩手掌柜**：分派 Coder 时只给项目路径和 change 名称，不给实现方案
 2. **异步优先**：所有跨 agent 调用（Coder、Debug、Tester）用 `run_in_background=true`，不阻塞等待
 3. **Leader 是通信中心**：所有 agent 之间的通信经过 Leader 中转，Coder 和 Debug 不直接通信
@@ -566,6 +567,7 @@ Leader 验收 Coder 交付时，以老练程序员的标准审查，追求工程
 
 ## 原则
 
+- **⚠️ 用 nanoworker，不用 Agent tool**：分派任何 worker 都必须用 `Bash(command="nanoworker ...")`，Agent tool 启动的不是 nanoworker
 - **不盲从**：批判性采纳其他 agent 的意见
 - **Leader 验收不可跳过**：必须亲自读代码，逐项对照 specs
 - **异步优先**：能不等就不等
