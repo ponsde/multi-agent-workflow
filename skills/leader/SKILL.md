@@ -132,19 +132,29 @@ Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查
 
 > **不可跳过。** Worktree 只包含已提交的文件。未 add 或 gitignored 的文件不会出现在 worktree 中，worker 会看不到或看到旧版本。
 
-创建 worktree 前，Leader 必须执行：
+这是一个**临时 commit**：commit 让 worktree 能拿到文件，创建完后立刻 reset 撤掉，不污染 git 历史。
 
 ```bash
-# 1. 检查相关文件是否有未提交的变更
-git status openspec/changes/<change-name>/ AI-CONTEXT.md
-
-# 2. 如果有未跟踪或未提交的文件，全部 add + commit
-git add openspec/changes/<change-name>/ AI-CONTEXT.md
-git commit -m "checkpoint: pre-worktree snapshot for <change-name>"
-
-# 3. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+# 1. 如果 .gitignore 排除了 openspec 或 AI-CONTEXT，临时移除排除规则
 grep -n "openspec\|AI-CONTEXT" .gitignore
-# 如果被排除了 → 从 .gitignore 中移除，重新 add + commit
+# 如果命中 → 临时注释掉或删除对应行（后面会恢复）
+
+# 2. 强制 add 相关文件（-f 绕过 gitignore）
+git add -f openspec/changes/<change-name>/ AI-CONTEXT.md
+
+# 3. 临时 commit
+git commit -m "tmp: worktree checkpoint for <change-name> (will be reset)"
+
+# 4. 创建 worktree（此时 worktree 包含所有文件）
+git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
+git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
+# ...按实际并行度创建
+
+# 5. 立刻撤掉临时 commit（保留文件在工作区，只撤 commit）
+git reset HEAD~1
+
+# 6. 如果步骤 1 改了 .gitignore，恢复原样
+git checkout .gitignore
 ```
 
 **必须检查的文件：**
@@ -152,16 +162,7 @@ grep -n "openspec\|AI-CONTEXT" .gitignore
 - `AI-CONTEXT.md`
 - 其他 change 产出物引用的文件
 
-**检查不通过 → 禁止创建 worktree。** 先 commit 再继续。
-
-### 创建
-
-```bash
-# 为每个并行 Coder 创建 worktree
-git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
-git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
-# ...按实际并行度创建
-```
+**效果：** worktree 里有文件，主分支 git 历史里没有临时 commit，.gitignore 恢复原样。
 
 ### 合并流程
 
@@ -212,15 +213,15 @@ Leader 从 Agent Registry 动态决定并行度，**禁止硬编码**：
 - 不同组之间的文件修改范围尽量不交叉
 - **公共文件**（路由注册、配置文件、index 导出等所有组都要碰的文件）标记为"Leader 后处理"，不分给任何 Coder
 
-### Debug 资源池分配
+### Debug 资源池分配（流水线模式）
 
-Debug 和 Coder/worktree 数量解耦，按资源池模式分配：
+**不等所有 Coder 完成。** Coder 完成一个 worktree，立刻分配 Debug 审查该 worktree。各 worktree 独立，无需等其他 Coder。
 
-1. 按 Role 列筛选 Debug 角色 agent，得到 debug_count
-2. **debug_parallelism = min(debug_count, worktree_count)**
-3. Leader 将前 debug_parallelism 个 worktree 分配给可用 Debug，以 `run_in_background=true` 同时分派
-4. 如果还有剩余 worktree 待审查，等最先完成的 Debug，将其分配给下一个 worktree
-5. 每个 worktree 的 discussion.md 记录完整上下文，任何 Debug 都能接手
+1. 按 Role 列筛选 Debug 角色 agent，得到 debug_count，建立可用 Debug 队列
+2. Coder 完成一个 worktree → 从 Debug 队列取一个可用 Debug → 分派审查该 worktree（`run_in_background=true`）
+3. 如果所有 Debug 都在忙 → 等最先完成的 Debug 释放，分配给下一个已完成的 worktree
+4. 每个 worktree 的 discussion.md 记录完整上下文，任何 Debug 都能接手
+5. **所有 worktree 的 Coder+Debug 都完成后 → 进入 merge**
 
 ---
 

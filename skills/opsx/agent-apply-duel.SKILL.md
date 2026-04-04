@@ -377,22 +377,26 @@ git worktree list
 
 ### P3. Worktree Checkpoint + 创建
 
-> **不可跳过。** Worktree 只包含已提交的文件。未 commit 的 openspec changes、AI-CONTEXT.md 等文件不会出现在 worktree 中。
+> **不可跳过。** Worktree 只包含已提交的文件。这是临时 commit，创建完后立刻 reset 撤掉，不污染 git 历史。
 
 ```bash
-# 1. 检查并提交相关文件
-git status openspec/changes/<change-name>/ AI-CONTEXT.md
-git add openspec/changes/<change-name>/ AI-CONTEXT.md
-git commit -m "checkpoint: pre-worktree snapshot for <change-name>"
-
-# 2. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+# 1. 如果 .gitignore 排除了 openspec 或 AI-CONTEXT，临时注释掉
 grep -n "openspec\|AI-CONTEXT" .gitignore
-# 如果被排除 → 移除排除规则，重新 add + commit
+
+# 2. 强制 add + 临时 commit
+git add -f openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "tmp: worktree checkpoint for <change-name> (will be reset)"
 
 # 3. 创建 worktree
 git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
 git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 # ...按 coder_parallelism 创建
+
+# 4. 立刻撤掉临时 commit（保留文件在工作区）
+git reset HEAD~1
+
+# 5. 恢复 .gitignore（如果步骤 1 改了）
+git checkout .gitignore
 ```
 
 ### P4. 并行分派 Coder

@@ -259,22 +259,26 @@ git worktree list
 
 ### P3. Worktree Checkpoint + 创建
 
-> **不可跳过。** Worktree 只包含已提交的文件。未 commit 的 openspec changes、AI-CONTEXT.md 等文件不会出现在 worktree 中。
+> **不可跳过。** Worktree 只包含已提交的文件。这是临时 commit，创建完后立刻 reset 撤掉，不污染 git 历史。
 
 ```bash
-# 1. 检查并提交相关文件
-git status openspec/changes/<change-name>/ AI-CONTEXT.md
-git add openspec/changes/<change-name>/ AI-CONTEXT.md
-git commit -m "checkpoint: pre-worktree snapshot for <change-name>"
-
-# 2. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+# 1. 如果 .gitignore 排除了 openspec 或 AI-CONTEXT，临时注释掉
 grep -n "openspec\|AI-CONTEXT" .gitignore
-# 如果被排除 → 移除排除规则，重新 add + commit
+
+# 2. 强制 add + 临时 commit
+git add -f openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "tmp: worktree checkpoint for <change-name> (will be reset)"
 
 # 3. 创建 worktree
 git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
 git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 # ...按 coder_parallelism 创建
+
+# 4. 立刻撤掉临时 commit（保留文件在工作区）
+git reset HEAD~1
+
+# 5. 恢复 .gitignore（如果步骤 1 改了）
+git checkout .gitignore
 ```
 
 ### P4. 并行分派 Coder
@@ -287,18 +291,16 @@ git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 
 消息内容同单路模式步骤 5 的 Coder 消息模板，项目路径换为 worktree 路径。
 
-### P5. 等待所有 Coder 完成
+### P5. 流水线 Debug（Coder 完成一个就派一个）
 
-**必须等全部完成后才进入 Debug 阶段**，禁止部分完成就开始 Debug。
+> **不等所有 Coder 完成。** 各 worktree 独立，Coder 完成一个就立刻派 Debug 审查。
 
-### P6. Debug 资源池分配
-
-1. 从 Agent Registry 统计 Debug 角色 agent 数量 → debug_count
-2. **debug_parallelism = min(debug_count, coder_parallelism)**
-3. 将前 debug_parallelism 个 worktree 分配给可用 Debug，以 `run_in_background=true` 同时分派
+1. 从 Agent Registry 统计 Debug 角色 agent 数量 → debug_count，建立可用 Debug 队列
+2. 某个 Coder 完成 → 从 Debug 队列取一个可用 Debug → 分派审查该 worktree（`run_in_background=true`）
+3. 如果所有 Debug 都在忙 → 等最先完成的 Debug 释放，分配给下一个已完成的 worktree
 4. 每个 Debug 收到对应 worktree 路径 + 该 Coder 修改的文件清单
-5. 如果还有剩余 worktree 待审查 → 等最先完成的 Debug，分配下一个 worktree
-6. 每个 worktree 的讨论记录在 `<worktree-path>/openspec/changes/<change-name>/discussion-wt-<N>.md`
+5. 每个 worktree 的讨论记录在 `<worktree-path>/openspec/changes/<change-name>/discussion-wt-<N>.md`
+6. **所有 worktree 的 Coder+Debug 都完成后 → 进入 merge**
 
 消息内容同单路模式步骤 7 的 Debug 消息模板，项目路径换为 worktree 路径。
 

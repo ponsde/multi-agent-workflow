@@ -62,20 +62,24 @@ Leader 和 Coder **同时**审查 change，各自独立，互不影响。
 
 #### 5a. Worktree Checkpoint + 创建 Coder 审查用 worktree
 
-> **不可跳过。** Worktree 只包含已提交的文件。
+> **不可跳过。** 临时 commit 让 worktree 拿到文件，创建完后立刻 reset 撤掉，不污染 git 历史。
 
 ```bash
-# 1. 检查并提交相关文件（change 产出物 + AI-CONTEXT.md）
-git status openspec/changes/<change-name>/ AI-CONTEXT.md
-git add openspec/changes/<change-name>/ AI-CONTEXT.md
-git commit -m "checkpoint: pre-worktree snapshot for <change-name> review"
-
-# 2. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+# 1. 如果 .gitignore 排除了 openspec 或 AI-CONTEXT，临时注释掉
 grep -n "openspec\|AI-CONTEXT" .gitignore
-# 如果被排除 → 移除排除规则，重新 add + commit
+
+# 2. 强制 add + 临时 commit
+git add -f openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "tmp: worktree checkpoint for <change-name> review (will be reset)"
 
 # 3. 创建 worktree
 git worktree add .worktrees/<change-name>-review -b review/<change-name>
+
+# 4. 立刻撤掉临时 commit
+git reset HEAD~1
+
+# 5. 恢复 .gitignore（如果步骤 1 改了）
+git checkout .gitignore
 ```
 
 #### 5b. 分派 Coder 审查
