@@ -257,9 +257,21 @@ git worktree list
 - 不同组之间的文件修改范围尽量不交叉
 - **公共文件**（路由注册、配置文件、index 导出等所有组都要碰的文件）标记为"Leader 后处理"，不分给任何 Coder
 
-### P3. 创建 Worktree
+### P3. Worktree Checkpoint + 创建
+
+> **不可跳过。** Worktree 只包含已提交的文件。未 commit 的 openspec changes、AI-CONTEXT.md 等文件不会出现在 worktree 中。
 
 ```bash
+# 1. 检查并提交相关文件
+git status openspec/changes/<change-name>/ AI-CONTEXT.md
+git add openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "checkpoint: pre-worktree snapshot for <change-name>"
+
+# 2. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+grep -n "openspec\|AI-CONTEXT" .gitignore
+# 如果被排除 → 移除排除规则，重新 add + commit
+
+# 3. 创建 worktree
 git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
 git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
 # ...按 coder_parallelism 创建

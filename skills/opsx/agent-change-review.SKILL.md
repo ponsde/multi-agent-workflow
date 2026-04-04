@@ -60,9 +60,21 @@ Leader 先快速判断本次 change 的特征，决定审查策略：
 
 Leader 和 Coder **同时**审查 change，各自独立，互不影响。
 
-#### 5a. 创建 Coder 审查用 worktree
+#### 5a. Worktree Checkpoint + 创建 Coder 审查用 worktree
+
+> **不可跳过。** Worktree 只包含已提交的文件。
 
 ```bash
+# 1. 检查并提交相关文件（change 产出物 + AI-CONTEXT.md）
+git status openspec/changes/<change-name>/ AI-CONTEXT.md
+git add openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "checkpoint: pre-worktree snapshot for <change-name> review"
+
+# 2. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+grep -n "openspec\|AI-CONTEXT" .gitignore
+# 如果被排除 → 移除排除规则，重新 add + commit
+
+# 3. 创建 worktree
 git worktree add .worktrees/<change-name>-review -b review/<change-name>
 ```
 

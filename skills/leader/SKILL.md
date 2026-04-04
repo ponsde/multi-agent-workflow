@@ -128,6 +128,32 @@ Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查
 - **路径**：`<project>/.worktrees/<change-name>-<N>`（N 从 1 开始）
 - **分支**：`parallel/<change-name>-<N>`
 
+### ⚠️ 创建前必做：Worktree Checkpoint
+
+> **不可跳过。** Worktree 只包含已提交的文件。未 add 或 gitignored 的文件不会出现在 worktree 中，worker 会看不到或看到旧版本。
+
+创建 worktree 前，Leader 必须执行：
+
+```bash
+# 1. 检查相关文件是否有未提交的变更
+git status openspec/changes/<change-name>/ AI-CONTEXT.md
+
+# 2. 如果有未跟踪或未提交的文件，全部 add + commit
+git add openspec/changes/<change-name>/ AI-CONTEXT.md
+git commit -m "checkpoint: pre-worktree snapshot for <change-name>"
+
+# 3. 确认 .gitignore 没有排除 openspec/ 或 AI-CONTEXT.md
+grep -n "openspec\|AI-CONTEXT" .gitignore
+# 如果被排除了 → 从 .gitignore 中移除，重新 add + commit
+```
+
+**必须检查的文件：**
+- `openspec/changes/<change-name>/`（proposal、design、specs、tasks 全部）
+- `AI-CONTEXT.md`
+- 其他 change 产出物引用的文件
+
+**检查不通过 → 禁止创建 worktree。** 先 commit 再继续。
+
 ### 创建
 
 ```bash
