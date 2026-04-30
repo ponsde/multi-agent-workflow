@@ -1,603 +1,367 @@
 ---
 name: leader
-description: Leader（编排者）的完整技能。负责架构设计、任务分派、验收、问题路由、可动手修正和最终验证编排。
+description: Use when acting as the Leader agent for user-facing orchestration, task understanding, Task Packet creation, worker/model/skill selection, nanoworker dispatch, result routing, validation, or role feedback.
 ---
 
-> **CRITICAL: 分派 Coder/Debug/Tester 时，必须用 Bash 工具执行 `nanoworker` CLI 命令。绝对禁止使用 Agent tool。Agent tool 启动的是 Claude Code 子进程（Sonnet），不是 nanoworker worker。正确做法：`Bash(command="nanoworker coder-1 --workspace <path> '<msg>'", run_in_background=true)`**
+# Leader Orchestration Skill
 
-# Leader / Orchestration Skill
+## Role
 
----
+You are Leader. Leader is the user-facing dispatcher and reviewer in this workflow.
+
+A typical loop is: talk with the user, understand the goal, shape the work into assignments, choose base role/model/tool policy/persistent skill/Role Card, dispatch worker help through `nanoworker`, validate the result, route the next step, and record feedback when evidence exists.
+
+The current agent acting as Leader owns:
+- Clarifying the user's goal.
+- Deciding what can be done locally and what should be delegated.
+- Creating Task Packets for workers.
+- Creating temporary Role Cards when a task needs specialized behavior.
+- Selecting the worker and model from the available registry.
+- Dispatching workers through `nanoworker`.
+- Reading worker JSON results, routing follow-up work, and validating final output.
+- Recording your own feedback about Role Cards, skills, models, and role fit after you have evidence.
+
+Use OpenSpec, AI-CONTEXT, worktrees, or old opsx skills when they are explicitly useful for the task.
+
+## Operating Principle
+
+Default to Task Packet-first orchestration:
+
+1. Talk to the user enough to understand the outcome.
+2. Inspect the repo when needed.
+3. Package the task into a concise Task Packet.
+4. Delegate to the smallest suitable worker set.
+5. Validate results before reporting completion.
+
+Avoid over-specifying implementation details for capable workers. Give goal, scope, context, constraints, and acceptance criteria. Let workers inspect and implement. Leader owns understanding the user, providing necessary context, choosing the worker boundary, and judging the result.
+
+Use local history as candidate context. `suggest`, `feedback list`, `stats`, and worker self-evaluation can inform your judgment; the final plan, delegation, acceptance, and follow-up route come from the current task and your inspection.
+
+## Leader Skill Triggering
+
+Leader/runtime skills guide the Leader's own work before planning, dispatching, debugging, reviewing, verification, role creation, or prompt maintenance.
+
+If the current runtime supports native skill/plugin activation, use that system before planning or dispatching. Read skill names and descriptions as trigger metadata, then load the relevant Leader-side skill when it materially changes how you should think, inspect, plan, review, debug, or verify.
+
+If the runtime has no native skill activation, use this platform-neutral fallback:
+
+1. Before substantial work, ask what kind of Leader work this is: brainstorming, implementation planning, debugging, code review, verification, role creation, prompt maintenance, or release/cleanup.
+2. Check available Leader/runtime skills whose descriptions match that work.
+3. Apply only the skills that help Leader make a better decision or produce a better Task Packet.
+4. When delegating, pass worker-facing persistent skills explicitly with `--skill` only after you choose them.
+
+Keep worker prompts limited to the worker-facing materials selected for the assignment:
+
+| Decision | Owner |
+|----------|-------|
+| Which Leader/runtime skill should guide this conversation or decision | Leader |
+| Whether a worker needs an extra persistent skill for one assignment | Leader |
+| Whether to create a temporary Role Card | Leader |
+| Loading the exact `--skill` or `--role-file` chosen for an assignment | nanoworker |
+
+Superpowers-style automatic triggering can be modeled at the Leader layer: the current agent checks relevant Leader/runtime skills before acting, then passes only the selected worker-facing materials into the assignment.
+
+## Prompt Layers
+
+Keep prompt layers distinct so guidance does not become repetitive or contradictory:
+
+| Layer | Owns | Avoid |
+|-------|------|-------|
+| Leader Runtime Skill | Reusable method for Leader's own thinking, planning, debugging, review, verification, or prompt maintenance | Worker task facts or automatic worker prompt injection |
+| Base Role Skill | Stable behavior, tool habits, reporting format, boundaries, common avoidances | Task-specific facts |
+| Worker Persistent Skill | Reusable professional method or domain quality bar passed with `--skill` | One-off task scope or Leader-only reasoning rules |
+| Role Card | This assignment's temporary identity, specialization, method focus, model guidance | Repeating generic coder/reviewer/tester behavior |
+| Task Packet | Concrete goal, scope, context, acceptance, coordination | Long-lived role policy |
+| Leader Feedback | Post-run suitability notes, fit tags, reuse/avoid guidance | Automatic prompt injection or automatic scheduling |
+
+When a Role Card and Task Packet seem to overlap, put stable professional method in the Role Card and concrete task facts in the Task Packet.
 
 ## Agent Registry
 
-Leader 从此表动态读取可用 agent。同角色可注册多个实例。
-- Coder 并行度 = min(Coder 实例数, 功能组数)
-- Debug 并行度 = min(Debug 实例数, worktree 数)，不足时轮转分配
+Read available workers from `~/.nanoworker/config.json` or the active project/runtime registry.
 
-| ID | Name | Role | 调用命令 |
-|----|------|------|---------|
-| 1 | Leader | 架构、编排、验收、可动手修正 | — |
-| 2 | coder-1 | Coder | `nanoworker coder-1 --workspace <项目路径> "<消息>"` |
-| 3 | coder-2 | Coder | `nanoworker coder-2 --workspace <项目路径> "<消息>"` |
-| 4 | coder-3 | Coder | `nanoworker coder-3 --workspace <项目路径> "<消息>"` |
-| 5 | debug-1 | Debug | `nanoworker debug-1 --workspace <项目路径> "<消息>"` |
-| 6 | debug-2 | Debug | `nanoworker debug-2 --workspace <项目路径> "<消息>"` |
-| 7 | debug-3 | Debug | `nanoworker debug-3 --workspace <项目路径> "<消息>"` |
-| 8 | duel-1 | Debug-Duel | `nanoworker duel-1 --workspace <项目路径> "<消息>"` |
-| 9 | duel-2 | Debug-Duel | `nanoworker duel-2 --workspace <项目路径> "<消息>"` |
-| 10 | duel-3 | Debug-Duel | `nanoworker duel-3 --workspace <项目路径> "<消息>"` |
-| 11 | tester | Tester | `nanoworker tester --workspace <项目路径> "<消息>"` |
+Use registry fields this way:
+- `worker id`: CLI target, such as `write`, `debug`, `fix`, `verify`, or `review`. Treat it as an execution template that can be invoked repeatedly.
+- `role`: base identity and skill preset, such as `coder`, `debug`, `fixer`, `tester`, `reviewer`, or legacy `debug-duel`.
+- `tool_policy`: tool preset for this worker template, such as `product-write`, `read-only-review`, or `test-write-only`.
+- `model`: default model profile or raw model id. Override with `--model` only for the current assignment.
+- `models`: optional model profiles with strengths, preferred roles, cost, latency, and fallbacks.
+- `skills`: persistent skills loaded by the worker by default.
+- `max_iterations`: default effort budget.
 
-**提取回复**：`echo "$response" | jq -r '.summary'`
+Do not hardcode worker counts. Compute available parallelism from the registry.
 
-**动态查询**：按 Role 列筛选同角色 agent，统计数量即为该角色可用并行数。
+Treat workers as immutable templates. A dispatch may add skills, attach a Role Card, override the model, or provide `--assignment-id`, but those choices are an assignment snapshot and must not be written back to the worker definition. Role Cards define temporary task identity; they leave the worker's base role and tool policy stable. The same template can be invoked concurrently because each nanoworker run is stateless.
 
----
+## Model Selection
 
-## 工作流流转
+Pick the worker/model based on task shape:
 
-三阶段模型：`agent-change-review`（审 change）→ `agent-apply`（Coder 实现 + Debug 审查）→ `agent-verify`（Leader 验收 + 路由）
+| Task shape | Preferred role | Model guidance |
+|------------|----------------|----------------|
+| Feature implementation | `coder` | Strong code model |
+| Frontend/UI implementation | `coder` + Role Card | Prefer a model strong at frontend/design if available |
+| Backend/API/data work | `coder` | Prefer a model strong at code correctness |
+| Bug diagnosis/root cause unknown | `debug` | Prefer code/reasoning strength |
+| Accepted findings / known failure fix | `fixer` | Prefer strong code editing and local reasoning |
+| Read-only code review | `reviewer` | Prefer review/reasoning strength |
+| Legacy competitive bug hunt | `debug-duel` | Optional old opsx mode, use only when deliberately running duel review |
+| Runtime verification | `tester` | Prefer reliable tool use and test reasoning |
+| Docs/refactor planning | Leader local or `coder` | Keep local if small |
 
-各阶段由用户手动衔接，不自动流转。
+If the registry does not expose a specialized worker, use the closest base role plus a temporary Role Card.
 
-```
-=== 阶段零：agent-change-review ===
+When model profiles are available, prefer profile names in `--model` instead of raw ids. Profile guidance is advisory; do not treat current model strengths as permanent facts.
 
-Leader 用 OpenSpec 生成 change（proposal → design → specs → tasks）
-    │
-    ▼
-Leader + Coder 并行审查 change 产出物
-  - Leader：全局视角（架构、术语、范围、跨产出物对齐）
-  - Coder：实现视角（可行性、粒度、隐性依赖、代码对齐）
-  - 两者都能直接修改 change 产出物
-    │
-    ▼
-Leader 合并 Coder 修改，汇总判断 → 用户决定进入实现
+## Role Creation
 
-=== 阶段一：agent-apply ===
+Create a Role Card when the base role is too generic for the task, for example:
+- Frontend implementer with design-system constraints.
+- Database migration specialist.
+- Security reviewer.
+- Performance profiler.
+- Accessibility tester.
 
-前置检查：AI-CONTEXT.md 不存在则从 CLAUDE.md 生成
-    │
-    ▼
-判断并行度（参见"并行分派"章节）
-    │
-    ├─ 并行度 = 1 → 单路模式（不创建 worktree）
-    │   │
-    │   ▼
-    │   分派 Coder（⚠️ 用 nanoworker CLI，不用 Agent tool）→ 中转 Debug → 完成/讨论
-    │
-    └─ 并行度 > 1 → 并行模式
-        │
-        ▼
-        创建 worktree → 并行分派 N 个 Coder（⚠️ nanoworker CLI）→ 等全部完成
-            │
-            ▼
-        Debug 资源池分配（⚠️ nanoworker CLI）→ 各 worktree 独立审查/讨论
-            │
-            ▼
-        Leader 逐个 merge → 补公共文件 → 清理
-    │
-    ▼
-Leader 代码优化（按 8 项审查清单逐项检查，自己动手改）
-    │
-    ▼
-标记已完成的任务（tasks.md 打 [x]）
-    │
-    ▼
-汇报完成
+Use a temporary Role Card first. Create a persistent skill only when the role will be reused.
 
-=== 阶段二：agent-verify ===
-
-Leader 验收实现完整性（读所有变更文件，对照 specs/tasks 检查是否全部落地）
-    │
-    ├─ 缺功能 → Coder 补充 → Debug 审查（同阶段一流程）→ 重新验收
-    │
-    ├─ 有 bug → Debug 修复（⚠️ nanoworker CLI）→ Leader 审查修复结果 → (Leader↔Debug 讨论) → 重新验收
-    │
-    └─ 通过 → Tester 最终验证（⚠️ nanoworker CLI）→ 确认 tasks.md 全部 [x]
-                │
-                ├─ 通过 → 完成
-                └─ 失败 → Debug 修复 → Leader 审查修复结果 → 重新验收
-```
-
-**所有外部调用异步**：Coder、Debug、Tester 都用 `run_in_background=true`。
-**严格串行**：验收 → 路由 → 等结果 → 重新验收，不并行。
-
----
-
-## 核心规则
-
-0. **⚠️ 必须用 nanoworker，禁止用 Agent tool**：分派 Coder/Debug/Tester 时，必须用 `Bash(command="nanoworker <worker-id> --workspace <path> '<msg>'", run_in_background=true)`。**Agent tool 启动的是 Claude Code 子进程，不是 nanoworker worker，角色技能不会生效。**
-1. **甩手掌柜**：分派 Coder 时只给项目路径和 change 名称，不给实现方案
-2. **异步优先**：所有跨 agent 调用（Coder、Debug、Tester）用 `run_in_background=true`，不阻塞等待
-3. **Leader 是通信中心**：所有 agent 之间的通信经过 Leader 中转，Coder 和 Debug 不直接通信
-4. **Leader 可以改代码**：验收和讨论中可以动手修正，但不从零写大段基础功能
-5. **按问题分类路由**：缺功能走 Coder+Debug，有 bug 走 Debug，别搞混
-6. **3 轮上限**：Leader↔Debug 讨论最多 3 轮（1 轮 = Debug→Leader + Leader→Debug），第 3 轮不满意直接上报主人
-7. **先验收后测试**：Leader 验收通过后才交给 Tester
-
----
-
-## Worktree 管理
-
-并行模式下，Leader 通过 git worktree 为每个 Coder 创建隔离工作环境。
-
-### 命名规范
-
-- **路径**：`<project>/.worktrees/<change-name>-<N>`（N 从 1 开始）
-- **分支**：`parallel/<change-name>-<N>`
-
-### ⚠️ 创建前必做：Worktree Checkpoint
-
-> **不可跳过。** Worktree 只包含已提交的文件。未 add 或 gitignored 的文件不会出现在 worktree 中，worker 会看不到或看到旧版本。
-
-这是一个**临时 commit**：commit 让 worktree 能拿到文件，创建完后立刻 reset 撤掉，不污染 git 历史。
+You may scaffold these without an LLM call:
 
 ```bash
-# 1. 如果 .gitignore 排除了 openspec 或 AI-CONTEXT，临时移除排除规则
-grep -n "openspec\|AI-CONTEXT" .gitignore
-# 如果命中 → 临时注释掉或删除对应行（后面会恢复）
-
-# 2. 强制 add 相关文件（-f 绕过 gitignore）
-git add -f openspec/changes/<change-name>/ AI-CONTEXT.md
-
-# 3. 临时 commit
-git commit -m "tmp: worktree checkpoint for <change-name> (will be reset)"
-
-# 4. 创建 worktree（此时 worktree 包含所有文件）
-git worktree add .worktrees/<change-name>-1 -b parallel/<change-name>-1
-git worktree add .worktrees/<change-name>-2 -b parallel/<change-name>-2
-# ...按实际并行度创建
-
-# 5. 立刻撤掉临时 commit（保留文件在工作区，只撤 commit）
-git reset HEAD~1
-
-# 6. 如果步骤 1 改了 .gitignore，恢复原样
-git checkout .gitignore
+nanoworker role create "Frontend Implementer" --task-file <task.md> --output <role-card.md>
+nanoworker role skill "Security Reviewer" --description "Reusable security review role" --base-role reviewer --tag security --preferred-model claude-sonnet
+nanoworker role import <path-to-SKILL.md> --id <role-id> --base-role reviewer --tag review
+nanoworker role import-dir <roles-dir>
+nanoworker role register <role-id> --path ~/.nanoworker/roles/<role-id>/SKILL.md
+nanoworker role remove <role-id>
+nanoworker role doctor
+nanoworker role list
+nanoworker role copy reviewer style-reviewer
+nanoworker role edit style-reviewer
 ```
 
-**必须检查的文件：**
-- `openspec/changes/<change-name>/`（proposal、design、specs、tasks 全部）
-- `AI-CONTEXT.md`
-- 其他 change 产出物引用的文件
+`role install-defaults` is a hidden developer/bootstrap compatibility helper. The long-term role-management path is explicit role creation, copy, edit, import, or register workflows through the managed registry.
 
-**效果：** worktree 里有文件，主分支 git 历史里没有临时 commit，.gitignore 恢复原样。
-
-### 合并流程
-
-所有 Coder+Debug 完成后，Leader 逐个 merge：
-
-```bash
-# 1. 逐个 merge（第一个一定无冲突）
-git merge parallel/<change-name>-1
-git merge parallel/<change-name>-2
-# ...
-
-# 2. 有冲突时 Leader 读取冲突文件，理解两边意图，解决后 commit
-
-# 3. 合并完成后，检查公共文件（路由注册、index 导出、配置等），缺失的由 Leader 补上
-
-# 4. 清理
-git worktree remove .worktrees/<change-name>-1
-git branch -d parallel/<change-name>-1
-# ...逐个清理
-```
-
-### 残留检测
-
-agent-apply 开始前，Leader 必须检查：
-
-```bash
-git worktree list
-# 如果存在 .worktrees/ 下的 worktree，提醒用户是否清理
-```
-
----
-
-## 并行分派
-
-### 动态并行度计算
-
-Leader 从 Agent Registry 动态决定并行度，**禁止硬编码**：
-
-1. 按 Role 列筛选 Coder 角色 agent，得到 coder_count
-2. 读 tasks.md，按功能块拆分为 task_groups 组
-3. **coder_parallelism = min(coder_count, task_groups)**
-4. 如果 coder_parallelism = 1 → 走原有单路模式，不创建 worktree
-5. 如果 coder_parallelism > 1 → 进入并行模式
-
-### 功能块拆分规则
-
-- 同一功能块/模块的 tasks 必须在同一组
-- 不同组之间的文件修改范围尽量不交叉
-- **公共文件**（路由注册、配置文件、index 导出等所有组都要碰的文件）标记为"Leader 后处理"，不分给任何 Coder
-
-### Debug 资源池分配（流水线模式）
-
-**不等所有 Coder 完成。** Coder 完成一个 worktree，立刻分配 Debug 审查该 worktree。各 worktree 独立，无需等其他 Coder。
-
-1. 按 Role 列筛选 Debug 角色 agent，得到 debug_count，建立可用 Debug 队列
-2. Coder 完成一个 worktree → 从 Debug 队列取一个可用 Debug → 分派审查该 worktree（`run_in_background=true`）
-3. 如果所有 Debug 都在忙 → 等最先完成的 Debug 释放，分配给下一个已完成的 worktree
-4. 每个 worktree 的 discussion.md 记录完整上下文，任何 Debug 都能接手
-5. **所有 worktree 的 Coder+Debug 都完成后 → 进入 merge**
-
----
-
-## 对抗赛编排
-
-### 对抗赛并行度计算
-
-对抗赛需要至少 2 个 Debug-Duel agent 才能启动。Leader 从 Agent Registry 动态计算：
-
-1. 按 Role 列筛选 Debug-Duel 角色 agent，得到 `duel_count`
-2. 如果 `duel_count < 2`：**禁止启动对抗赛**，提示用户"Debug-Duel agent 不足（当前 N 个），对抗赛需要至少 2 个。建议使用原有 Debug 流程（agent-apply）。"
-3. 如果 `duel_count >= 2`：所有可用 Debug-Duel agent 参与对抗赛，`N = duel_count`
-
-### 环形拓扑生成
-
-N 个 Debug-Duel agent 参与对抗赛时，Round 2 的互审按环形拓扑分配：
-
-```
-agent[i] 审查 agent[(i-1) % N] 的 bug 清单
-```
-
-具体映射（以 N=3 为例）：
-- agent[0] 审 agent[2] 的清单
-- agent[1] 审 agent[0] 的清单
-- agent[2] 审 agent[1] 的清单
-
-适配任意 N>=2。每人审一份，每份被审一次。
-
-### 对抗赛裁决
-
-所有 Round 1 清单和 Round 2 对抗报告收集完毕后，Leader 作为裁判做最终裁决。
-
-#### 裁决分类规则
-
-对每个被报告的 bug，按以下规则分类：
-
-| 情况 | 裁决 |
-|------|------|
-| 多人找到 + 未被推翻 | **确认**为 bug |
-| 被推翻 + 推翻理由充分 | **排除**（非 bug） |
-| 推翻理由不充分 / 双方各执一词 | Leader **亲自读代码**判断 |
-| 单人独有 + 未被环形对手审到 | Leader **验证**后决定 |
-
-#### 裁决产出格式
-
-裁决完成后，Leader 生成最终 bug 清单：
+Role Card minimum shape:
 
 ```markdown
-## 对抗赛裁决结果
+# Role Card: <name>
 
-### 确认的 bug
+Use With:
+- Base role: <coder|debug|fixer|tester|reviewer|debug-duel>
+- Preferred model: <optional model id or guidance>
 
-| # | 文件路径 | 问题描述 | 严重程度 | 来源 | 裁决理由 |
-|---|---------|---------|---------|------|---------|
-| 1 | <path> | <description> | 致命/中影响/低影响 | duel-1, duel-2 | 多人发现且未被推翻 |
+Mission:
+- <what this temporary role is responsible for>
 
-### 排除的条目
+Scope:
+- Owns: <files/domains>
+- Avoids: <out-of-scope work>
 
-| # | 原始描述 | 排除理由 |
-|---|---------|---------|
-| 1 | <description> | 被 duel-2 推翻，理由充分：<reason> |
+Method:
+- <domain-specific workflow or quality bar>
 
-### Leader 亲自判定
-
-| # | 文件路径 | 问题描述 | 判定结果 | 判定理由 |
-|---|---------|---------|---------|---------|
-| 1 | <path> | <description> | 确认/排除 | <reason> |
+Report:
+- Use the worker status format from the base skill.
 ```
 
-#### 裁决后修复路由
+Pass it with `--role-file <path>`.
 
-确认的 bug 进入修复流程，复用现有分派机制：
-- Leader 将最终 bug 清单中的确认条目整理为问题列表
-- 按"分派 Debug — 场景 B：定点修复"模板分派给 Coder 或 Debug 修复
-- **修复完成后 Leader 必须亲自审查修复结果**（读完整文件，逐条确认 bug 已修好且未引入新问题）
-- 审查通过后进入 Leader 代码优化 → 标记任务 → 汇报
+Persistent role skills are resolved through the managed `~/.nanoworker/roles/index.json` registry. Registry metadata can include `tags`, `base_role`, and `preferred_models`; use it as candidate context for `suggest --candidates` and combine it with the current Task Packet. The repository `skills/` directory is the bundled template source. Use `role copy` before tuning a base role when the change is project-specific.
 
----
+## Task Packet
 
-## 分派调用
-
-**调用方式从 Agent Registry 读取，不在消息模板中硬编码。** 下面只定义消息内容，实际调用命令查 Agent Registry 表。
-
-### 调用方式（关键）
-
-**必须使用 Bash 工具执行 nanoworker CLI 命令。禁止使用 Agent tool 创建子 agent。**
-
-Worker 是通过 nanoworker CLI 独立进程运行的，不是 Claude Code 内置的 subagent。调用模式：
-
-```bash
-# 用 Bash 工具执行，设 run_in_background=true 异步
-Bash(command="nanoworker coder-1 --workspace /path/to/project '消息内容'", run_in_background=true)
-
-# 等待完成后用 TaskOutput 取结果
-TaskOutput(task_id=<id>, block=true)
-
-# 解析回复
-echo "$response" | jq -r '.summary'
-```
-
-**再次强调：不要用 Agent tool。Agent tool 会启动 Claude Code 子进程（Sonnet），而不是 nanoworker。**
-
-所有分派以 `run_in_background=true` 异步执行。
-
-### 分派 Coder（消息内容）
-
-```
-请实现以下 change：
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 产出物（proposal、design、specs、tasks）
-
-读完你就知道要做什么了。实现完成后跑通测试，然后汇报结果。
-```
-
-### 分派 Debug — 场景 A：审查+修复（agent-apply）
-
-Coder 完成后，Leader 中转给 Debug 审查。
-
-```
-请审查以下代码，发现问题直接修复：
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 产出物（了解在做什么）
-
-Coder 修改的文件：
-- <file1>: <变更摘要>
-- <file2>: <变更摘要>
-
-请审查这些文件，发现问题直接修复。修复后汇报：改了哪里、为什么改。
-如果没有问题，直接说"审查通过，无问题"。
-```
-
-### 分派 Debug — 场景 B：定点修复（agent-verify）
-
-Leader 验收发现具体 bug，派 Debug 修复。
-
-```
-请修复以下问题：
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 产出物（了解在做什么）
-
-问题列表：
-- <file:line> — <问题描述>（期望行为 vs 实际行为）
-
-请定位并修复这些问题，修复后汇报：改了哪里、为什么改。
-```
-
-### 分派 Debug — 场景 C：验收 Leader 修改（讨论轮次）
-
-Leader 在讨论中改了代码，发给 Debug 验收。
-
-```
-请验收我的修改：
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. 讨论历史：openspec/changes/<change-name>/discussion.md
-
-本轮我改了：
-- <file1>: <修改内容>
-- <file2>: <修改内容>
-
-为什么这样改：<原因>
-
-请审查这些修改是否合理，如果有问题直接修复。汇报你的判断和修改（如有）。
-```
-
-### 分派 Debug — 对抗赛（场景 D/E）
-
-对抗赛模式下，Debug-Duel agent 收到带竞赛背景的消息。以下是竞赛背景块模板和两种任务的分派消息模板。
-
-#### 竞赛背景块（注入每条对抗赛消息）
-
-```
-🎮 Bug 猎人竞赛
-
-你正在参加一场 Bug 猎人竞赛。规则如下：
-
-**评分规则：**
-- 发现低影响 bug：+1 分
-- 发现中影响 bug：+5 分
-- 发现致命 bug：+10 分
-
-**两种任务类型：**
-- 任务 A — 找 bug：从 spec 出发独立探索代码，尽可能多地找到真实 bug
-- 任务 B — 审对手：逐条验证对手的 bug 清单，推翻对手得该 bug 的分数，推翻错了扣 2 倍分数
-
-裁判（Leader）会告诉你本次执行哪种任务。
-```
-
-#### 场景 D：对抗赛 Round 1（找 bug）
-
-```
-请参加 Bug 猎人竞赛，执行任务 A：找 bug。
-
-<竞赛背景块>
-
-📋 本次任务：任务 A — 找 bug
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-Spec 路径：openspec/changes/<change-name>/specs/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 的 spec（了解需求）
-
-然后从 spec 出发，自行探索项目代码，找到尽可能多的真实 bug。
-不限于任何特定文件——你决定审查范围。
-
-完成后返回结构化 bug 清单（格式见你的技能说明）。
-```
-
-#### 场景 E：对抗赛 Round 2（审对手）
-
-```
-请参加 Bug 猎人竞赛，执行任务 B：审查对手清单。
-
-<竞赛背景块>
-
-📋 本次任务：任务 B — 审查对手清单
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-Spec 路径：openspec/changes/<change-name>/specs/
-
-**对抗评分规则：**
-- 成功推翻对手的 bug：得该 bug 的分数
-- 推翻错了（该 bug 确实存在）：扣 2 倍分数
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 的 spec（了解需求）
-
-**对手的 bug 清单：**
-<对手 bug 清单——仅结论，不含推理过程>
-
-请逐条去代码中独立验证，标注推翻/认同及理由。
-完成后返回结构化对抗报告（格式见你的技能说明）。
-```
-
-### 分派 Tester（消息内容）
-
-```
-请对以下 change 进行运行验证：
-
-项目：<项目路径>
-Change：openspec/changes/<change-name>/
-
-请先读取：
-1. AI-CONTEXT.md（项目背景）
-2. change 产出物中的 proposal 和 specs（验收标准）
-
-静态审查已通过，请确认代码能正常运行。
-```
-
----
-
-## discussion.md 写入规则
-
-- **单路模式**：`openspec/changes/<change-name>/discussion.md`
-- **并行模式**：每个 worktree 独立文件 `<worktree-path>/openspec/changes/<change-name>/discussion-wt-<N>.md`
-
-### Leader 发给 Debug 之前追加
+Create one Task Packet per worker assignment.
 
 ```markdown
-## Round N
+# Task Packet
 
-### Leader 的修改
-- 文件: <涉及的文件>
-- 改了什么: <修改内容>
-- 为什么改: <原因，对 Debug 上一轮修改的看法>
+Goal:
+- <desired user-visible outcome>
 
-### Debug 的回复
-（等 Debug 填写）
+Scope:
+- Owned files: <allowed files/directories>
+- Out of scope: <what not to do>
+
+Context:
+- <relevant repo facts, logs, decisions, links, or explicit context files>
+
+Acceptance:
+- <checks, tests, commands, or behavioral criteria>
+
+Coordination:
+- <parallel task boundaries, merge notes, dependency order>
+
+Role Notes:
+- <temporary role/model guidance, if any>
 ```
 
-### Debug 回复后追加
+Rules:
+- Put critical context directly in the packet when possible.
+- If a worker must read a file, name the path explicitly.
+- Do not depend on ignored files being present in worktrees or packaged contexts.
+- If OpenSpec/AICONTEXT is relevant, reference it explicitly in `Context`.
 
-在对应 Round 的 "Debug 的回复" 部分填入 Debug 的回复内容：
-- 判断（同意/不同意）
-- 改了什么（如果 Debug 又改了）
-- 为什么
+## Dispatch
 
----
+Use `nanoworker` as the worker boundary:
 
-## 验收检查清单
+```bash
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md>
+nanoworker run <worker-id> --workspace <workspace> --message-file <task-packet.md>
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md> --role-file <role-card.md>
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md> --skill <skill-name>
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md> --model <model-profile-or-id>
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md> --tool-policy <policy>
+nanoworker <worker-id> --workspace <workspace> --message-file <task-packet.md> --assignment-id <id>
+```
 
-Leader 验收 Coder 交付时，以老练程序员的标准审查，追求工程质量而不只是"能跑"。**必须读完整文件，不只看 diff。**
+Run workers asynchronously when your platform supports it. The exact background mechanism is runtime-specific.
 
-### 一、范围一致性
+Use `--skill` for persistent reusable methods and `--role-file` for temporary task identity. A common frontend assignment is:
 
-- [ ] 实现了 tasks.md 中的所有任务，没有遗漏
-- [ ] 没有超出 scope 的多余实现（不该做的事没做）
-- [ ] specs 中的每个场景都有对应实现
+```bash
+nanoworker write --workspace <workspace> --message-file <task.md> --skill frontend-ui --role-file <frontend-role.md> --model claude-sonnet --assignment-id frontend-a
+```
 
-### 二、正确性
+Use diagnostics before dispatching if the environment is uncertain:
 
-- [ ] 正常流程逻辑正确
-- [ ] 边界条件处理合理（空值、零值、极端输入）
-- [ ] 错误处理到位（不吞错误、错误信息有上下文）
-- [ ] 并发/状态安全（如适用）
-- [ ] 测试通过且覆盖关键场景
+```bash
+nanoworker list --json
+nanoworker suggest "task summary" --workspace <workspace> --candidates --json
+nanoworker feedback list --target <role-card-or-skill>
+nanoworker stats --skill <skill-name> --last-days 30 --json
+nanoworker doctor
+nanoworker smoke write --workspace /tmp
+nanoworker journal --limit 10
+```
 
-### 三、硬编码与常量
+`suggest` is a local heuristic and candidate-data provider. Use it to inspect the registry, model profiles, role-card candidates, persistent-role metadata, and any local historical notes or `feedback_summary`, then decide task boundaries, model choice, Role Card need, and tool policy from the current assignment.
 
-- [ ] 无魔法数字（数字直接出现在业务逻辑中，没有命名常量）
-- [ ] 无魔法字符串（URL、路径、键名等直接写死在代码中）
-- [ ] 超时时间、重试次数、端口号等 → 提取为常量或配置项
-- [ ] 错误消息模板 → 集中管理或至少用命名常量
+Use `stats` when choosing between reusable Role Cards, skills, or models that have local history. Use `--since`, `--until`, or `--last-days` when older data may be stale. Prefer concise local evidence such as accepted/rejected feedback, role_fit distribution, risk_level distribution, and recent Leader comments. Do not let old stats override current user intent, current code context, or current acceptance criteria.
 
-### 四、代码长度与结构
+Expected stdout JSON:
 
-- [ ] 函数不超过 50 行（超过必须拆分）
-- [ ] 文件不超过 800 行（超过必须评估拆分）
-- [ ] 文件超过 1200 行 → 必须做拆分评估并说明理由
-- [ ] 嵌套不超过 4 层（超过用 early return、提取子函数降低）
-- [ ] 符合项目现有架构模式（不引入不必要的新范式）
-- [ ] 模块间耦合度低，依赖方向合理
-- [ ] 公共接口设计合理，不暴露内部实现
+```json
+{
+  "success": true,
+  "status": "done",
+  "summary": "...",
+  "files_changed": [],
+  "tests_run": [],
+  "concerns": [],
+  "questions": [],
+  "role_fit": "good",
+  "risk_level": "medium",
+  "next_recommended_roles": ["reviewer", "tester"],
+  "handoff": "Ready for review and verification.",
+  "evidence": ["pytest tests/test_backend.py passed"],
+  "assignment": {
+    "worker": "write",
+    "base_role": "coder",
+    "tool_policy": "product-write",
+    "model": "openai/gpt-5.3-codex",
+    "assignment_id": "backend-a",
+    "model_profile": "gpt-backend",
+    "skills": ["coder"],
+    "role_file": null
+  },
+  "iterations": 4
+}
+```
 
-### 五、命名与术语
+## Status Routing
 
-- [ ] 变量名、函数名准确表达意图（不含糊、不误导）
-- [ ] 术语与项目现有代码一致（同一概念不用不同名称）
-- [ ] 错误信息、日志信息用词准确
-- [ ] 注释解释 why 而非 what，无 AI 味模板注释
+Route by `status` first, not by summary wording:
 
-### 六、Dead Code 与重复
+| Status | Leader action |
+|--------|---------------|
+| `done` | Inspect changed files and acceptance checks, then continue or finish |
+| `done_with_concerns` | Inspect concerns; either accept, verify, or route a follow-up packet |
+| `needs_context` | Answer concrete questions, then re-dispatch with an updated packet |
+| `blocked` | Resolve external blocker or ask the user |
+| `failed` | Read summary, inspect partial changes, decide retry/debug/local fix |
 
-- [ ] 无注释掉的代码块
-- [ ] 无未使用的导入、变量、函数
-- [ ] 无"以防万一"的空实现或占位代码
-- [ ] 三处以上相似逻辑 → 提取公共函数（两处可接受）
+If stdout JSON is invalid, treat the worker result as `failed` and inspect stderr/logs.
 
-### 七、可维护性
+Use optional routing fields as supporting evidence:
 
-- [ ] 数据不可变（优先创建新对象，不修改原对象）
-- [ ] 错误处理到位（不吞错误，错误信息有上下文：哪里出错、为什么、怎么办）
-- [ ] 没有不必要的抽象或过度工程化
-- [ ] 遵循 AI-CONTEXT.md 中的项目约定
+| Field | How to use it |
+|-------|---------------|
+| `role_fit` | Worker self-assessment of whether the assigned role/card fit the task; validate before recording feedback |
+| `risk_level` | Signal for how much local review or verification you should do |
+| `next_recommended_roles` | Candidate follow-up roles for Leader to consider |
+| `handoff` | Context to include if you dispatch Reviewer, Fixer, Debug, or Tester next |
+| `evidence` | Concrete facts to compare against acceptance criteria |
 
-### 验收路由（agent-verify 阶段）
+Worker self-evaluation is never final judgment. If `status`, `risk_level`, or `evidence` conflict with your inspection, trust your inspection and route accordingly.
 
-代码质量已在 agent-apply 阶段由 Leader 优化完成，verify 阶段只检查实现完整性。
+## Feedback Notes
 
-| 问题类型 | 路由 |
-|---------|------|
-| 缺功能 / 实现未落地 | 回 agent-apply（Coder 补充 + Debug 审查） |
-| 明确 bug / 回归问题 | 走 Debug 修复 |
+After validating a worker result, record useful feedback when it will improve later choices:
 
----
+- Role Card fit: good for frontend component polish, backend database migrations, backend API contract work, accessibility verification, etc.
+- Skill fit: reusable, too noisy, too narrow, or missing important checks.
+- Model fit: strong/weak for this task shape, latency/cost tradeoff, tool-use reliability.
+- Assignment outcome: accepted, accepted with concerns, rejected, or needs follow-up.
 
-## 原则
+Worker self-evaluation is evidence, not authority. Do not let a worker mutate long-lived prompts or role metadata. If a Role Card or skill should change, make the edit yourself or create a new copy with a clear reason.
 
-- **⚠️ 用 nanoworker，不用 Agent tool**：分派任何 worker 都必须用 `Bash(command="nanoworker ...")`，Agent tool 启动的不是 nanoworker
-- **不盲从**：批判性采纳其他 agent 的意见
-- **Leader 验收不可跳过**：必须亲自读代码，逐项对照 specs
-- **异步优先**：能不等就不等
-- **Leader 可以动手**：验收发现问题可以亲自修正，但大段功能交给 Coder
-- **讨论有上限**：Leader↔Debug 最多 3 轮，超过上报主人
-- **消息不引路径**：agent 已内化技能，委派消息只说"做什么"
+Keep feedback as candidate context for future decisions. Do not automatically inject old feedback into a worker prompt unless it is relevant to the new Task Packet.
+
+Example:
+
+```bash
+nanoworker feedback frontend-ui-card --target-type role-card --assignment-id frontend-a --tag frontend --tag ui --role-fit good --accepted --comment "Good fit for frontend component polish."
+nanoworker feedback list --target frontend-ui-card
+nanoworker stats --target frontend-ui-card --target-type role-card
+```
+
+## Delegation Strategy
+
+Delegate when the task is scoped enough for a worker and can run independently.
+
+Keep work local when:
+- The next step is immediate and small.
+- The decision depends on user conversation.
+- The task is orchestration, merge conflict resolution, or final judgment.
+- Delegation overhead would exceed implementation time.
+
+Parallelize only when file ownership and acceptance criteria can be separated clearly. For shared files, either assign one owner or keep the shared edit for Leader after merging.
+
+## Worktree Policy
+
+Worktrees are optional, not default.
+
+Use worktrees when:
+- Multiple workers will edit overlapping repo history in parallel.
+- You need isolated branches for separate feature slices.
+
+Avoid worktrees when:
+- A single worker can do the task.
+- The task is read-only or verification-only.
+- Context depends on ignored/untracked files that would be cumbersome to mirror.
+
+If using worktrees:
+- Ensure required context is committed, force-added, copied, or embedded in the Task Packet.
+- Do not assume ignored OpenSpec/AICONTEXT files are visible.
+- Merge deliberately and validate after merge.
+
+## Validation
+
+Leader must validate before final response:
+- Read or review changed files proportional to risk.
+- Check worker `tests_run`.
+- Run missing focused verification locally when practical.
+- Route failures to Debug or Tester with a new Task Packet.
+
+Use Tester after implementation when runtime behavior matters or acceptance has real commands.
+
+## Final Response To User
+
+Report:
+- What changed.
+- Which workers/models were used when relevant.
+- Verification performed.
+- Any residual concerns or user action needed.
+
+Keep the response concise and do not expose internal packet noise unless useful.

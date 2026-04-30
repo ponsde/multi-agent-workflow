@@ -4,37 +4,46 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
 
-from nanoworker.llm import ToolCall, chat
+from nanoworker.llm import chat
+from nanoworker.protocol import (
+    FAILED,
+    AssignmentSnapshot,
+    WorkerResult,
+    extract_decision_data,
+    extract_report_sections,
+    infer_status,
+    result_to_json_dict,
+)
 from nanoworker.tools import ToolRegistry
 
 
-@dataclass(frozen=True)
-class WorkerResult:
-    success: bool
-    summary: str
-    iterations: int
-    files_changed: tuple[str, ...] = ()
-
-
 def _track_file_changes(tool_calls_log: list[dict[str, Any]]) -> tuple[str, ...]:
-    """Extract file paths from write/edit tool calls and flag exec usage."""
+    """Extract file paths from write/edit tool calls and flag bash usage."""
     paths: set[str] = set()
-    has_exec = False
+    has_bash = False
     for entry in tool_calls_log:
         name = entry["name"]
-        if name in ("write_file", "edit_file"):
+        if name in ("write", "edit", "write_file", "edit_file"):
             args = entry.get("arguments", {})
             if "path" in args:
                 paths.add(args["path"])
-        elif name == "exec":
-            has_exec = True
-    if has_exec:
-        paths.add("[exec commands were used - additional files may have changed]")
+        elif name in ("bash", "exec"):
+            has_bash = True
+    if has_bash:
+        paths.add("[bash commands were used - additional files may have changed]")
+    return tuple(sorted(paths))
+
+
+def _merge_reported_files(tracked: tuple[str, ...], reported: tuple[str, ...]) -> tuple[str, ...]:
+    paths = set(tracked)
+    for item in reported:
+        path = item.split(":", 1)[0].strip().strip("`")
+        if path:
+            paths.add(path)
     return tuple(sorted(paths))
 
 
@@ -44,6 +53,7 @@ async def run_worker(
     task: str,
     tools: ToolRegistry,
     max_iterations: int = 30,
+    assignment: AssignmentSnapshot | None = None,
 ) -> WorkerResult:
     """Run the worker agent loop."""
 
@@ -68,9 +78,11 @@ async def run_worker(
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             return WorkerResult(
-                success=False,
+                status=FAILED,
                 summary=f"LLM call failed: {e}",
                 iterations=iteration,
+                files_changed=_track_file_changes(tool_calls_log),
+                assignment=assignment,
             )
 
         # No tool calls → final response
@@ -126,19 +138,32 @@ async def run_worker(
 
         files_changed = _track_file_changes(tool_calls_log)
         return WorkerResult(
-            success=False,
+            status=FAILED,
             summary=final_content,
             iterations=max_iterations,
             files_changed=files_changed,
+            assignment=assignment,
         )
 
     files_changed = _track_file_changes(tool_calls_log)
+    summary = final_content[:2000] if final_content else "Task completed"
+    report_sections = extract_report_sections(final_content)
+    decision_data = extract_decision_data(final_content)
 
     return WorkerResult(
-        success=True,
-        summary=final_content[:2000] if final_content else "Task completed",
+        status=infer_status(final_content),
+        summary=summary,
         iterations=iteration,
-        files_changed=files_changed,
+        files_changed=_merge_reported_files(files_changed, report_sections["files_changed"]),
+        tests_run=report_sections["tests_run"],
+        concerns=report_sections["concerns"],
+        questions=report_sections["questions"],
+        role_fit=decision_data["role_fit"],
+        risk_level=decision_data["risk_level"],
+        next_recommended_roles=decision_data["next_recommended_roles"],
+        handoff=decision_data["handoff"],
+        evidence=decision_data["evidence"],
+        assignment=assignment,
     )
 
 
@@ -155,10 +180,5 @@ def _summarize_args(args: dict[str, Any]) -> str:
 
 def output_result(result: WorkerResult) -> None:
     """Write JSON result to stdout."""
-    data = {
-        "success": result.success,
-        "summary": result.summary,
-        "files_changed": list(result.files_changed),
-        "iterations": result.iterations,
-    }
+    data = result_to_json_dict(result)
     print(json.dumps(data, ensure_ascii=False), file=sys.stdout)

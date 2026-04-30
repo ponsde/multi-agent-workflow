@@ -1,5 +1,10 @@
 # Multi-Agent Workflow Blueprint
 
+> **Status: superseded — kept for historical reference.**
+> 本文件描述的是 opsx 后期"少角色，强流程，强门禁（agent-change-review → agent-apply → agent-verify）"路线，
+> 随着主模型能力提升，项目已转向"Leader 主 session 模型自己控流"的更轻形态。
+> 现行方向以 [`README.md`](README.md) 与 [`skills/leader/SKILL.md`](skills/leader/SKILL.md) 为准。
+>
 > 角色是基础积木，流程是建筑图纸。
 > 后续发展重点不是加更多积木，而是把积木做得更清晰、更轻、更稳，再把流程编排得更合理。
 

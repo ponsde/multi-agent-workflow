@@ -1,9 +1,6 @@
 # AI-CONTEXT.md 模板
 
-> 放在项目根目录，所有 agent 收到任务后第一件事就是读这个文件。
-> Leader 在 agent-apply 开始前检查：不存在则从 CLAUDE.md 自动生成。
-
----
+> 可选的项目背景文件。新流程优先使用 Task Packet；只有当多个 worker 需要复用同一份稳定项目背景时，才需要 AI-CONTEXT.md。
 
 ```markdown
 # AI Context
@@ -38,35 +35,17 @@ project/
 <!-- 踩过的坑、不能动的东西、特殊限制 -->
 ```
 
----
+## 使用方式
 
-## 使用说明
+| 情况 | 建议 |
+|------|------|
+| Task Packet 已包含足够上下文 | 不需要 AI-CONTEXT.md |
+| 多个 worker 会反复用到同一项目背景 | 创建 AI-CONTEXT.md，并在 Task Packet 中显式引用 |
+| 使用 worktree 或打包上下文 | 确保文件可见，或把关键内容直接写入 Task Packet |
+| 项目已有 CLAUDE.md、AGENTS.md 等说明 | 可从这些文件提炼 AI-CONTEXT.md |
 
-### 手动创建
+## 注意
 
-把上面的模板复制到项目根目录，填入实际内容。
-
-### 自动生成
-
-如果项目已有 `CLAUDE.md`（Claude Code 自动生成的项目描述），Leader 会在 agent-apply 开始前自动从中提取信息生成 AI-CONTEXT.md。提取的字段：
-
-1. **项目简介** — 项目是什么、做什么
-2. **技术栈** — 语言、框架、依赖
-3. **目录结构** — 核心目录
-4. **架构概要** — 模块关系
-5. **约定** — 命名、风格、测试约定
-6. **注意事项** — 踩坑记录、限制
-
-### 三种情况
-
-| 情况 | Leader 行为 |
-|------|------------|
-| 项目有 AI-CONTEXT.md | 跳过，直接开始 |
-| 没有 AI-CONTEXT.md，有 CLAUDE.md | 从 CLAUDE.md 自动生成 |
-| 两者都没有 | 提醒用户手动创建 |
-
-### 为什么需要这个文件？
-
-- **统一上下文**：所有 agent 读同一份背景信息，减少因信息缺失产生的幻觉
-- **与 CLAUDE.md 分离**：CLAUDE.md 是 Claude Code 专属配置，AI-CONTEXT.md 是跨平台共享的项目背景
-- **轻量**：一个 markdown 文件，不依赖任何工具
+- Worker 不应默认第一步读取 AI-CONTEXT.md。
+- 被 `.gitignore` 忽略的 AI-CONTEXT.md 不一定能进入 worktree 或打包上下文。
+- 关键需求、验收标准、错误日志优先写入 Task Packet。

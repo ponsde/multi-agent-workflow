@@ -10,9 +10,9 @@ from nanoworker.tools.base import Tool
 DEFAULT_TIMEOUT = 120  # seconds
 
 
-class ExecTool(Tool):
-    name = "exec"
-    description = "Execute a shell command and return its output (stdout + stderr)."
+class BashTool(Tool):
+    name = "bash"
+    description = "Execute a shell command in the workspace and return stdout + stderr."
 
     def __init__(self, cwd: str = ".", timeout: int = DEFAULT_TIMEOUT) -> None:
         self._cwd = cwd
@@ -22,16 +22,15 @@ class ExecTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command to execute.",
-                },
+                "command": {"type": "string", "description": "Shell command to execute."},
+                "timeout": {"type": "integer", "description": "Timeout in seconds. Defaults to 120."},
             },
             "required": ["command"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> str:
         command = arguments["command"]
+        timeout = int(arguments.get("timeout") or self._timeout)
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
@@ -41,7 +40,7 @@ class ExecTool(Tool):
             )
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
-                timeout=self._timeout,
+                timeout=timeout,
             )
 
             output_parts = []
@@ -58,6 +57,6 @@ class ExecTool(Tool):
             return f"Exit code: {proc.returncode}\n{output}"
 
         except asyncio.TimeoutError:
-            return f"Error: command timed out after {self._timeout}s"
+            return f"Error: command timed out after {timeout}s"
         except Exception as e:
             return f"Error executing command: {e}"

@@ -1,4 +1,4 @@
-"""Tool registry and role-based tool presets."""
+"""Tool registry and tool-policy presets."""
 
 from __future__ import annotations
 
@@ -6,12 +6,14 @@ from typing import Any
 
 from nanoworker.tools.base import Tool
 from nanoworker.tools.filesystem import (
-    EditFileTool,
-    ListDirTool,
-    ReadFileTool,
-    WriteFileTool,
+    EditTool,
+    FindTool,
+    GrepTool,
+    LsTool,
+    ReadTool,
+    WriteTool,
 )
-from nanoworker.tools.shell import ExecTool
+from nanoworker.tools.shell import BashTool
 
 
 class ToolRegistry:
@@ -46,24 +48,82 @@ class ToolRegistry:
             return f"Error executing {name}: {e}"
 
 
-# Role -> tool preset
-ROLE_TOOLS: dict[str, tuple[type[Tool], ...]] = {
-    "coder": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
-    "debug": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
-    "debug-duel": (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool, ExecTool),
-    "tester": (ReadFileTool, ListDirTool, ExecTool),
+class TestWriteTool(WriteTool):
+    """Write tool constrained to test/spec-looking paths."""
+
+    description = "Write content to a test/spec file in the workspace. Creates parent directories if needed."
+
+    def __init__(self, workspace: str) -> None:
+        super().__init__(workspace, write_policy="tests")
+
+
+class TestEditTool(EditTool):
+    """Edit tool constrained to test/spec-looking paths."""
+
+    description = "Edit a test/spec file with one or more exact string replacements."
+
+    def __init__(self, workspace: str) -> None:
+        super().__init__(workspace, write_policy="tests")
+
+
+PRIMARY_TOOL_POLICIES = (
+    "product-write",
+    "read-only-review",
+    "test-write-only",
+    "no-shell",
+    "read-only-no-shell",
+)
+
+
+# Tool policy -> tool preset. Role names remain accepted as compatibility aliases.
+TOOL_POLICIES: dict[str, tuple[type[Tool], ...]] = {
+    "product-write": (ReadTool, WriteTool, EditTool, LsTool, GrepTool, FindTool, BashTool),
+    "read-only-review": (ReadTool, LsTool, GrepTool, FindTool, BashTool),
+    "test-write-only": (ReadTool, TestWriteTool, TestEditTool, LsTool, GrepTool, FindTool, BashTool),
+    "no-shell": (ReadTool, WriteTool, EditTool, LsTool, GrepTool, FindTool),
+    "read-only-no-shell": (ReadTool, LsTool, GrepTool, FindTool),
+    "coder": (ReadTool, WriteTool, EditTool, LsTool, GrepTool, FindTool, BashTool),
+    "debug": (ReadTool, WriteTool, EditTool, LsTool, GrepTool, FindTool, BashTool),
+    "fixer": (ReadTool, WriteTool, EditTool, LsTool, GrepTool, FindTool, BashTool),
+    "reviewer": (ReadTool, LsTool, GrepTool, FindTool, BashTool),
+    "debug-duel": (ReadTool, LsTool, GrepTool, FindTool, BashTool),
+    "tester": (ReadTool, TestWriteTool, TestEditTool, LsTool, GrepTool, FindTool, BashTool),
+}
+ROLE_TOOLS = TOOL_POLICIES
+
+
+ROLE_DEFAULT_TOOL_POLICY: dict[str, str] = {
+    "coder": "product-write",
+    "debug": "product-write",
+    "fixer": "product-write",
+    "reviewer": "read-only-review",
+    "debug-duel": "read-only-review",
+    "tester": "test-write-only",
 }
 
 
-def get_tools_for_role(role: str, workspace: str) -> ToolRegistry:
-    """Create a ToolRegistry with tools appropriate for the given role."""
+def resolve_tool_policy(role: str, tool_policy: str | None = None) -> str:
+    """Resolve a worker role plus optional policy override into a policy name."""
+    return tool_policy or ROLE_DEFAULT_TOOL_POLICY.get(role, role)
+
+
+def get_tools_for_policy(tool_policy: str, workspace: str) -> ToolRegistry:
+    """Create a ToolRegistry with tools appropriate for the given tool policy."""
+    if tool_policy not in TOOL_POLICIES:
+        raise ValueError(f"unknown tool_policy: {tool_policy}")
+
     registry = ToolRegistry()
-    tool_classes = ROLE_TOOLS.get(role, ROLE_TOOLS["coder"])
+    tool_classes = TOOL_POLICIES[tool_policy]
 
     for tool_cls in tool_classes:
-        if tool_cls == ExecTool:
+        if tool_cls == BashTool:
             registry.register(tool_cls(cwd=workspace))
         else:
-            registry.register(tool_cls())
+            registry.register(tool_cls(workspace))
 
     return registry
+
+
+def get_tools_for_role(role: str, workspace: str) -> ToolRegistry:
+    """Create a ToolRegistry with the default tools for a role."""
+    return get_tools_for_policy(resolve_tool_policy(role), workspace)
