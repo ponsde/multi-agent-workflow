@@ -52,6 +52,24 @@
               └─ stdout: 一行 JSON
 ```
 
+## Worker 一次跑做了什么
+
+`nanoworker write ...` 这一行命令背后的生命周期：
+
+1. **启动**。起一个 Python 进程，读 `~/.nanoworker/env` 和 `~/.nanoworker/config.json`，按命令行参数（`--model` / `--skill` / `--role-file` / `--tool-policy` / `--assignment-id`）做这次 assignment 的覆盖。worker 模板本身不被改写。
+2. **建提示**。`build_system_prompt` 按顺序拼出 system message：worker 头（角色名、时间、workspace 路径）→ base role skill → 每个 `--skill` 内容 → `--role-file` 内容。Task Packet（`--message-file` 内容）作为 user message。
+3. **建工具**。按 tool policy 实例化 `ToolRegistry`，所有文件类工具锁在 `--workspace` 目录里。
+4. **进 tool-call 循环**（最多 `max_iterations` 轮，默认 30）。每轮调一次 `litellm.acompletion`：模型返回 tool_calls 就在本地跑工具、把结果写回 messages 进入下一轮；模型不再调工具就跳出循环。
+5. **拼结果**。从最后那段文本里解析 `Status:`、`Files Changed`、`Tests Run`、`role_fit` 等字段，构造 `WorkerResult`。
+6. **吐 JSON**。一行 JSON 写到 stdout，进程退出。日志全部走 stderr。
+
+几条不变量：
+
+- worker 不知道别的 worker 存在，也不会自己派下一步。所有路由都回到 Leader 手上。
+- 工具调用直接落盘（在 workspace 内）。stdout 上不会出现工具结果。
+- 当模型调用本身挂了（网络/限流），且这次 assignment 还没改过任何文件，才允许 fallback 模型重试。一旦写过盘 fallback 就不会再触发，避免半成品被覆盖。
+- 跑满 `max_iterations` 直接判 `failed`，不会无限转。
+
 ## 提示分层（项目最关键的设计）
 
 5 层提示，职责严格不重叠：
@@ -205,6 +223,25 @@ nanoworker smoke write --workspace /tmp --tool
 nanoworker journal --limit 10
 ```
 
+## 给 worker 的三种材料：怎么选
+
+提示分层那张表里跨了 5 层，但 worker 这一侧实际能加的就 3 种：base role skill、persistent skill、role card。三者经常被混。下面这张表更直白：
+
+| | Base Role Skill | Worker Persistent Skill | Role Card |
+|---|---|---|---|
+| 是什么 | 角色底盘（"我是 coder"） | 可复用领域方法（"前端组件该怎么打磨"） | 一次性身份卡（"这次你是 X 项目的前端实现者"） |
+| 寿命 | 长期，几乎不改 | 长期，偶尔补充 | 一次性，跑完就丢 |
+| Leader 怎么传 | worker 模板自带（`config.workers.<id>.skills`） | `--skill <name>` | `--role-file <path>` |
+| 注册位置 | `~/.nanoworker/roles/` | `~/.nanoworker/roles/` | 临时 markdown 文件 |
+| 典型内容 | "报告格式""不直接改代码" | "frontend-ui：响应式 + 设计系统 token 检查" | "用 Tailwind v4，避开 motion 库" |
+| 是否绑定具体任务 | 不绑定 | 不绑定 | 完全绑定 |
+
+判断 tip：
+
+- **连续三次写出大同小异的 Role Card** → 该把共性抽成 persistent skill。
+- **想改 base role 的报告格式** → 先 `nanoworker role copy <id> <new-id>` 再改，别直接污染原 base role。
+- **persistent skill 越写越具体、开始包含任务事实** → 越界了。skill 只该说"怎么做"，"这次做什么"放回 Task Packet。
+
 ## Role Cards 和持久 Skills
 
 一次性专业身份用 Role Card：
@@ -277,14 +314,40 @@ worker 自评是证据，不是最终结论；不要让 worker 自动改长期 p
 
 ## 配置
 
+### 安装
+
 ```bash
 pip install -e .
 nanoworker init --provider openai-compatible
 nanoworker doctor
+```
+
+`nanoworker init` 在 `~/.nanoworker/config.json` 写入默认 providers、models、workers 模板。`doctor` 告诉你哪些 env 变量还没设、哪些 worker 模板能跑、哪些 skill 注册过。
+
+### 凭据：`~/.nanoworker/env`
+
+凭据全部走环境变量，**不要**写到 `config.json` 的字面值里。仓库根有一份 `nanoworker.env.example`：
+
+```bash
+cp nanoworker.env.example ~/.nanoworker/env
+# 编辑 ~/.nanoworker/env，填入真实 key 和 base URL
+```
+
+加载顺序（高优先级覆盖低优先级）：
+
+1. **进程已有 env** —— shell `export` 或 CI secrets。最高优先级。
+2. **`~/.nanoworker/env`** —— 启动时由 `load_local_env_file` 读取，**不会覆盖**进程已有 env。
+3. **`config.json` 里的 literal `api_key`** —— 已 deprecated，`doctor` 会标红。`nanoworker migrate-config` 把老配置升级成 env-name 形式。
+
+worker 启动时 `setup_provider_env` 会按这次要调的 model 前缀（`openai/...` 或 `anthropic/...`），把 `LLM_API_KEY` / `LLM_API_BASE` 镜像成 litellm 实际识别的变量名（`OPENAI_API_KEY`、`OPENAI_API_BASE`、`ANTHROPIC_API_BASE` 等），不需要你手动镜像。
+
+跑一遍最小烟测确认连通：
+
+```bash
 nanoworker smoke write --workspace /tmp --tool
 ```
 
-示例 `~/.nanoworker/config.json`（模型 id 仅作配置形态示例）：
+### `config.json` 形态
 
 ```json
 {
@@ -311,7 +374,7 @@ nanoworker smoke write --workspace /tmp --tool
 }
 ```
 
-LLM 凭据走环境变量或 `~/.nanoworker/env`：`LLM_API_KEY` + `LLM_API_BASE` 覆盖 OpenAI-兼容路径，`LLM_ANTHROPIC_API_BASE` 覆盖 Anthropic 原生。
+模型 id 仅作配置形态示例，按你能访问的模型替换。providers 配置（指定每个 provider 用哪个 env 名）`init` 已经写好了，一般不用动。
 
 更多细节：
 
